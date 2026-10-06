@@ -1,0 +1,22 @@
+name: doppler-config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install pinned Doppler CLI
+        run: ./scripts/install-doppler.sh
+
+      - name: Validate Doppler runtime configuration
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: ./scripts/verify-doppler.sh

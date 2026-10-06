@@ -28,7 +28,7 @@ function truncate(text, limit = 5000) {
 
 function publicError(error, workRoot) {
   return String(error?.message || error || "Unknown error")
-    .replaceAll(workRoot, "<workspace>")
+    .replaceAll(workRoot, "[workspace]")
     .replace(/https:\/\/[^\s@]+@github\.com/gi, "https://github.com")
     .slice(0, 2000);
 }

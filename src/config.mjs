@@ -56,7 +56,7 @@ export function loadConfig() {
   }
 
   const allowedUserIds = new Set(
-    csv(process.env.ALLOWED_GITHUB_USER_IDS || "285490571").map((value) => {
+    csv(required("ALLOWED_GITHUB_USER_IDS")).map((value) => {
       const id = Number.parseInt(value, 10);
       if (!Number.isSafeInteger(id) || id <= 0) {
         throw new Error("ALLOWED_GITHUB_USER_IDS must contain numeric GitHub IDs");

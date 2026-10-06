@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 
-const API = "https://api.github.com";
+const API = new URL("https://api.github.com/");
 const API_VERSION = "2022-11-28";
+const REQUEST_TIMEOUT_MS = 30_000;
 
 function base64url(value) {
   return Buffer.from(value)
@@ -22,8 +23,17 @@ function appJwt(appId, privateKey) {
   return `${unsigned}.${base64url(signature)}`;
 }
 
-async function request(path, { token, method = "GET", body } = {}) {
-  const response = await fetch(`${API}${path}`, {
+function apiUrl(pathname) {
+  const relative = String(pathname).replace(/^\/+/, "");
+  const url = new URL(relative, API);
+  if (url.origin !== API.origin) {
+    throw new Error("Refusing unexpected GitHub API origin");
+  }
+  return url;
+}
+
+async function request(pathname, { token, method = "GET", body } = {}) {
+  const response = await fetch(apiUrl(pathname), {
     method,
     headers: {
       Accept: "application/vnd.github+json",
@@ -33,6 +43,7 @@ async function request(path, { token, method = "GET", body } = {}) {
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   const text = await response.text();
@@ -59,7 +70,7 @@ async function request(path, { token, method = "GET", body } = {}) {
 export async function createInstallationToken(config, installationId) {
   if (!installationId) throw new Error("Webhook payload has no installation ID");
   const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
-  const result = await request(`/app/installations/${installationId}/access_tokens`, {
+  const result = await request(`app/installations/${installationId}/access_tokens`, {
     token: jwt,
     method: "POST",
   });
@@ -67,11 +78,11 @@ export async function createInstallationToken(config, installationId) {
 }
 
 export async function getPullRequest(repository, pullNumber, token) {
-  return request(`/repos/${repository}/pulls/${pullNumber}`, { token });
+  return request(`repos/${repository}/pulls/${pullNumber}`, { token });
 }
 
 export async function createPullRequestComment(repository, pullNumber, body, token) {
-  return request(`/repos/${repository}/issues/${pullNumber}/comments`, {
+  return request(`repos/${repository}/issues/${pullNumber}/comments`, {
     token,
     method: "POST",
     body: { body },

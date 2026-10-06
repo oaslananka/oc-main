@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 export async function runProcess(
   command,
@@ -13,26 +14,27 @@ export async function runProcess(
       shell: false,
     });
 
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     let stdout = "";
     let stderr = "";
     let outputBytes = 0;
     let settled = false;
 
-    const append = (target, chunk) => {
-      const text = chunk.toString("utf8");
-      outputBytes += Buffer.byteLength(text);
+    const append = (target, decoder, chunk) => {
+      outputBytes += chunk.length;
       if (outputBytes > maxOutputBytes) {
         child.kill("SIGKILL");
         return target;
       }
-      return target + text;
+      return target + decoder.write(chunk);
     };
 
     child.stdout.on("data", (chunk) => {
-      stdout = append(stdout, chunk);
+      stdout = append(stdout, stdoutDecoder, chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr = append(stderr, chunk);
+      stderr = append(stderr, stderrDecoder, chunk);
     });
 
     const timer = setTimeout(() => {
@@ -49,6 +51,8 @@ export async function runProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
 
       if (outputBytes > maxOutputBytes) {
         reject(new Error(`${command} exceeded the output limit`));

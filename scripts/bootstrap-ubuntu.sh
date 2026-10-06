@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCODE_VERSION="${OPENCODE_VERSION:-1.18.35}"
+OPENCODE_VERSION="1.18.35"
 ARCH="$(uname -m)"
 
 case "$ARCH" in
@@ -29,6 +29,9 @@ echo "${SHA256}  $tmp/opencode.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/opencode.tar.gz" -C "$tmp"
 sudo install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
 
+"$(dirname "$0")/install-doppler.sh"
+
 node --version
 /usr/local/bin/opencode --version
+/usr/local/bin/doppler --version
 bwrap --version
