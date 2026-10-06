@@ -27,5 +27,8 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Syntax check
+      - name: JavaScript syntax check
         run: npm run check
+
+      - name: Shell syntax check
+        run: bash -n scripts/*.sh
