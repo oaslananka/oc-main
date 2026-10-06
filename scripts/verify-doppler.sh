@@ -3,7 +3,7 @@ set -euo pipefail
 
 : "${DOPPLER_TOKEN:?DOPPLER_TOKEN must be set}"
 
-exec /usr/local/bin/doppler run   --project oc-main   --config main   -- /usr/bin/env -u DOPPLER_TOKEN /usr/bin/node -e '
+exec /usr/local/bin/doppler run   --project oc-main   --config main   -- /usr/bin/env -u DOPPLER_TOKEN node -e '
 const required = [
   "PORT",
   "GITHUB_APP_ID",
