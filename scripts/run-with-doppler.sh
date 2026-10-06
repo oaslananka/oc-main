@@ -10,7 +10,7 @@ if [[ ! -r "$TOKEN_FILE" ]]; then
 fi
 
 export DOPPLER_TOKEN
-DOPPLER_TOKEN="$(<"$TOKEN_FILE")"
+DOPPLER_TOKEN="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$TOKEN_FILE")"
 
 if [[ -z "$DOPPLER_TOKEN" ]]; then
   echo "Doppler credential is empty" >&2

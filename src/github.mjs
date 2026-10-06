@@ -23,13 +23,62 @@ function appJwt(appId, privateKey) {
   return `${unsigned}.${base64url(signature)}`;
 }
 
-function apiUrl(pathname) {
+export function apiUrl(pathname) {
   const relative = String(pathname).replace(/^\/+/, "");
+  if (!relative || relative.includes("\\") || relative.includes("://")) {
+    throw new Error("Refusing invalid GitHub API path");
+  }
+
+  for (const segment of relative.split("/")) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw new Error("Refusing invalid GitHub API path encoding");
+    }
+    if (
+      decoded === "." ||
+      decoded === ".." ||
+      decoded.includes("/") ||
+      decoded.includes("\\")
+    ) {
+      throw new Error("Refusing GitHub API path traversal");
+    }
+  }
+
   const url = new URL(relative, API);
   if (url.origin !== API.origin) {
     throw new Error("Refusing unexpected GitHub API origin");
   }
   return url;
+}
+
+function repositoryPath(repository) {
+  const parts = String(repository).split("/");
+  if (parts.length !== 2) {
+    throw new Error("Invalid GitHub repository full name");
+  }
+
+  for (const part of parts) {
+    if (
+      !part ||
+      part === "." ||
+      part === ".." ||
+      !/^[A-Za-z0-9_.-]+$/.test(part)
+    ) {
+      throw new Error("Invalid GitHub repository full name");
+    }
+  }
+
+  return parts.map(encodeURIComponent).join("/");
+}
+
+function positiveId(value, label) {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return String(numeric);
 }
 
 async function request(pathname, { token, method = "GET", body } = {}) {
@@ -68,21 +117,28 @@ async function request(pathname, { token, method = "GET", body } = {}) {
 }
 
 export async function createInstallationToken(config, installationId) {
-  if (!installationId) throw new Error("Webhook payload has no installation ID");
+  const safeInstallationId = positiveId(installationId, "installation ID");
   const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
-  const result = await request(`app/installations/${installationId}/access_tokens`, {
-    token: jwt,
-    method: "POST",
-  });
+  const result = await request(
+    `app/installations/${safeInstallationId}/access_tokens`,
+    {
+      token: jwt,
+      method: "POST",
+    },
+  );
   return result.token;
 }
 
 export async function getPullRequest(repository, pullNumber, token) {
-  return request(`repos/${repository}/pulls/${pullNumber}`, { token });
+  const safeRepository = repositoryPath(repository);
+  const safePullNumber = positiveId(pullNumber, "pull request number");
+  return request(`repos/${safeRepository}/pulls/${safePullNumber}`, { token });
 }
 
 export async function createPullRequestComment(repository, pullNumber, body, token) {
-  return request(`repos/${repository}/issues/${pullNumber}/comments`, {
+  const safeRepository = repositoryPath(repository);
+  const safePullNumber = positiveId(pullNumber, "pull request number");
+  return request(`repos/${safeRepository}/issues/${safePullNumber}/comments`, {
     token,
     method: "POST",
     body: { body },
