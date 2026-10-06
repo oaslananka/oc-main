@@ -22,7 +22,9 @@ esac
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-curl -fsSL "https://github.com/DopplerHQ/cli/releases/download/${DOPPLER_VERSION}/${ASSET}" -o "$tmp/doppler.tar.gz"
+curl --fail --silent --show-error --location --proto "=https" --proto-redir "=https" \
+  "https://github.com/DopplerHQ/cli/releases/download/${DOPPLER_VERSION}/${ASSET}" \
+  -o "$tmp/doppler.tar.gz"
 echo "${SHA256}  $tmp/doppler.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/doppler.tar.gz" -C "$tmp"
 sudo install -m 0755 "$tmp/doppler" /usr/local/bin/doppler
