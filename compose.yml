@@ -10,6 +10,8 @@ services:
     environment:
       DOPPLER_TOKEN_FILE: /run/secrets/doppler_token
       HOME: /var/lib/oc-main/controller-home
+    group_add:
+      - "${DOCKER_GID:-999}"
     secrets:
       - doppler_token
     volumes:

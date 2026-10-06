@@ -148,7 +148,6 @@ Create persistent host directories and the single Doppler bootstrap secret:
 
 ```bash
 sudo install -d -m 0700 /etc/oc-main
-sudo install -d -m 0700 /var/lib/oc-main /var/lib/oc-main/jobs
 
 printf '%s' 'dp.st....' | sudo tee /etc/oc-main/doppler-token >/dev/null
 sudo chmod 0600 /etc/oc-main/doppler-token
@@ -162,9 +161,9 @@ cd /home/ubuntu/Desktop/test_all
 git clone https://github.com/oaslananka/oc-main.git .
 git checkout infra/doppler-runtime
 
-sudo docker compose -f compose.yml build
-sudo docker compose -f compose.yml up -d
-sudo docker compose -f compose.yml ps
+sudo ./scripts/compose.sh build
+sudo ./scripts/compose.sh up -d
+sudo ./scripts/compose.sh ps
 ```
 
 Until PR #8 is merged, deploy the `infra/doppler-runtime` branch. After merge, deploy `main` instead.
@@ -172,19 +171,19 @@ Until PR #8 is merged, deploy the `infra/doppler-runtime` branch. After merge, d
 Follow logs with:
 
 ```bash
-sudo docker compose -f compose.yml logs -f controller caddy
+sudo ./scripts/compose.sh logs -f controller caddy
 ```
 
 Stop the whole webhook stack with:
 
 ```bash
-sudo docker compose -f compose.yml down
+sudo ./scripts/compose.sh down
 ```
 
 Start it again with:
 
 ```bash
-sudo docker compose -f compose.yml up -d
+sudo ./scripts/compose.sh up -d
 ```
 
 The Caddy service only proxies the exact public path `/oaslananka-ops` to the controller. Other paths on this dedicated hostname return 404.
@@ -194,6 +193,8 @@ Caddy manages the HTTPS certificate automatically. If Cloudflare proxying is ena
 ## Docker worker security boundary
 
 The controller mounts the host Docker socket because it creates short-lived worker containers. Treat the controller container as privileged infrastructure: Docker socket access is effectively host-level container authority.
+
+The application image runs as the non-root `node` user. `scripts/compose.sh` detects the host Docker socket group ID, adds that supplementary group to the controller container, and prepares `/var/lib/oc-main` with UID/GID 1000 ownership so the controller and workers do not need root inside the application image.
 
 The OpenCode worker itself does **not** receive the Docker socket.
 

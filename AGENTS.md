@@ -8,6 +8,7 @@ This repository is the central control plane for an owner-operated GitHub coding
 - `npm run check` — syntax-check source and tests.
 - `npm start` — start the webhook service when the required runtime environment is already present.
 - `docker compose -f compose.yml config` — validate the Docker deployment definition.
+- `sudo ./scripts/compose.sh up -d` — start the production Docker stack on the VPS with the host Docker socket group mapped safely.
 - `scripts/verify-doppler.sh` — validate that the Doppler `oc-main/main` config contains every runtime key without printing secret values.
 
 ## Architecture
