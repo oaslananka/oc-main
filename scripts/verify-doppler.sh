@@ -13,21 +13,13 @@ const required = [
   "GITHUB_APP_ID",
   "GITHUB_APP_PRIVATE_KEY_BASE64",
   "GITHUB_WEBHOOK_SECRET",
+  "WORKER_DISPATCH_SECRET",
+  "CONTROL_REPOSITORY",
   "ALLOWED_GITHUB_USER_IDS",
   "DEFAULT_MODEL",
   "ALLOWED_MODELS",
-  "WORK_ROOT",
-  "MAX_CONCURRENT_JOBS",
   "OPENCODE_TIMEOUT_MS",
-  "SANDBOX_MODE",
 ];
-
-if (process.env.SANDBOX_MODE === "docker") {
-  required.push("OPENCODE_WORKER_IMAGE", "DOCKER_SOCKET");
-}
-if (process.env.SANDBOX_MODE === "bwrap") {
-  required.push("OPENCODE_BIN");
-}
 
 const missing = required.filter((name) => !process.env[name]?.trim());
 if (missing.length) {

@@ -167,6 +167,37 @@ export async function createInstallationToken(config, installationId) {
   return result.token;
 }
 
+export async function createRepositoryInstallationToken(config, repository) {
+  const safeRepository = repositoryPath(repository);
+  const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
+  const installation = await request(`repos/${safeRepository}/installation`, {
+    token: jwt,
+  });
+  return createInstallationToken(config, installation.id);
+}
+
+export async function dispatchRepositoryEvent(
+  config,
+  repository,
+  eventType,
+  clientPayload,
+) {
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(eventType)) {
+    throw new Error("Invalid repository dispatch event type");
+  }
+
+  const safeRepository = repositoryPath(repository);
+  const token = await createRepositoryInstallationToken(config, repository);
+  await request(`repos/${safeRepository}/dispatches`, {
+    token,
+    method: "POST",
+    body: {
+      event_type: eventType,
+      client_payload: clientPayload,
+    },
+  });
+}
+
 export async function getPullRequest(repository, pullNumber, token) {
   const safeRepository = repositoryPath(repository);
   const safePullNumber = positiveId(pullNumber, "pull request number");

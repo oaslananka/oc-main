@@ -1,130 +1,127 @@
 # Operations
 
-## Runtime model
+## Architecture
 
-`oc-main` is a central GitHub App webhook service. Target repositories do not need an `oc-main` workflow or integration file. The GitHub App must be installed on every repository the service is allowed to operate on.
+`oc-main` uses two separate execution planes.
 
-The GitHub App may keep unrelated permissions and webhook subscriptions for other systems. `oc-main` only handles the event types it explicitly recognizes; unrelated webhook deliveries are acknowledged and ignored.
+### VPS control plane
 
-Production deployment uses Docker Compose on Ubuntu:
+The Ubuntu VPS runs only:
 
-- Caddy terminates HTTPS for `webhook.oaslananka.dev`.
-- The controller receives the GitHub App webhook at `/oaslananka-ops`.
-- The controller reads runtime settings and secrets from Doppler `oc-main/main`.
-- Each OpenCode run is executed by the real OpenCode CLI inside a short-lived Docker worker container.
-- The OpenCode GitHub Action is not used.
-- Free Zen models are used without a provider API key.
-- GitHub and Doppler credentials remain controller-side and are not passed into the OpenCode worker.
+- Caddy for HTTPS;
+- the lightweight Node.js webhook controller in Docker;
+- Doppler CLI inside that controller image.
 
-Each accepted PR command is processed as follows:
-
-1. Verify the GitHub webhook HMAC.
-2. Require the comment author's numeric GitHub user ID to be allowlisted.
-3. Require an accepted `/oc` or `/opencode` command.
-4. Mint a short-lived GitHub App installation token.
-5. Read the PR head repository, branch, and exact head SHA.
-6. Clone that branch into a temporary job directory.
-7. Start a short-lived OpenCode worker container with only the repository workspace and isolated agent home mounted.
-8. Over-mount the target checkout's `.git` directory read-only inside the worker.
-9. Run `opencode run --model ...` with no GitHub or Doppler credentials in the worker environment.
-10. Verify the PR head has not changed while the job was running.
-11. Commit any workspace change locally in the controller and push without force.
-12. Post the result to the PR and remove the temporary job directory.
-
-## GitHub App behavior
-
-The App can remain fully permissioned and subscribed for other owner systems. `oc-main` does not depend on reducing those App-level settings.
-
-The current `oc-main` webhook handler only interprets:
-
-- `issue_comment` with action `created`, and only when the issue is a pull request;
-- `pull_request_review_comment` with action `created`.
-
-All other GitHub webhook event names are ignored by `oc-main`.
-
-For accepted events, the current implementation needs these repository capabilities from the App installation:
-
-- Contents: Read and write
-- Issues: Read and write
-- Pull requests: Read and write
-- Metadata: Read-only
-
-The public webhook URL is:
+The public endpoint is:
 
 `https://webhook.oaslananka.dev/oaslananka-ops`
 
-The controller health endpoint remains internal:
+The VPS does **not** run OpenCode and does not clone or build target repositories.
 
-`GET /healthz`
+The existing GitHub App may remain fully permissioned and subscribed to unrelated events for other owner systems. The controller verifies the webhook signature, then only interprets supported PR comment events. Unrelated deliveries are acknowledged and ignored.
 
-## Owner-only execution
+### GitHub Actions worker plane
 
-`ALLOWED_GITHUB_USER_IDS` is a required comma-separated list of numeric GitHub user IDs. There is no compiled-in fallback. If the value is absent, the service fails to start instead of accepting commands from a default identity.
+When the authorized owner writes `/oc` or `/opencode` on a PR, the VPS controller:
 
-For the current owner-only deployment, Doppler should contain:
+1. validates the GitHub webhook HMAC;
+2. checks the numeric GitHub user ID allowlist;
+3. parses the command and model allowlist;
+4. signs a short-lived worker payload;
+5. sends a GitHub `repository_dispatch` event to `oaslananka/oc-main`.
 
-```text
-ALLOWED_GITHUB_USER_IDS=285490571
-```
+The `opencode-worker` workflow then runs on a GitHub-hosted Ubuntu runner. It installs and runs the real OpenCode CLI directly; it does not use `anomalyco/opencode/github`.
 
-A command must begin the trimmed comment:
+The worker:
 
-```text
-/oc fix the failing test
-```
+1. validates the signed dispatch payload using Doppler configuration;
+2. creates short-lived GitHub App installation tokens;
+3. clones the target PR branch into the GitHub-hosted runner;
+4. runs OpenCode with a deliberately minimal environment that does not include Doppler or GitHub App credentials;
+5. checks that the PR head did not move while OpenCode was running;
+6. commits and pushes any requested changes without force-pushing;
+7. posts the result back to the target PR.
 
-An allowed model can be selected per comment:
+Target repositories do not need an `oc-main` workflow or integration file.
 
-```text
-/oc model=opencode/big-pickle fix the failing test
-```
+## GitHub App event handling
 
-Comments from any other GitHub user are acknowledged and ignored.
+The App can keep all permissions and subscriptions required by other systems.
+
+`oc-main` currently acts only on:
+
+- `issue_comment` with action `created`, where the issue is a pull request;
+- `pull_request_review_comment` with action `created`.
+
+Everything else is ignored by this service.
+
+The controller-to-worker dispatch uses event type:
+
+`oc-run`
+
+The GitHub App must be installed on the control repository and on each target repository that the worker should be able to read/write.
 
 ## Doppler configuration
 
-Use Doppler project `oc-main`, config `main`. Use a read-only Service Token scoped to this single config for production. Do not use a personal or CLI token in production.
+Use Doppler project `oc-main`, config `main`.
 
-For the Docker deployment, the config must contain:
+Required keys:
 
 ```text
 PORT=8787
 WEBHOOK_PATH=/oaslananka-ops
+
 GITHUB_APP_ID=<github app id>
 GITHUB_APP_PRIVATE_KEY_BASE64=<base64 encoded PEM private key>
 GITHUB_WEBHOOK_SECRET=<github app webhook secret>
+
+WORKER_DISPATCH_SECRET=<random 32+ byte secret>
+CONTROL_REPOSITORY=oaslananka/oc-main
+
 ALLOWED_GITHUB_USER_IDS=285490571
+
 DEFAULT_MODEL=opencode/nemotron-3.5-lightning-free
 ALLOWED_MODELS=opencode/nemotron-3.5-lightning-free,opencode/nemotron-3-ultra-free,opencode/mimo-v2.6-flash-free,opencode/mimo-v2.5-free,opencode/muse-spark-1.3-contributor-free,opencode/big-pickle
-WORK_ROOT=/var/lib/oc-main/jobs
-MAX_CONCURRENT_JOBS=1
+
 OPENCODE_TIMEOUT_MS=1200000
-SANDBOX_MODE=docker
-OPENCODE_WORKER_IMAGE=oc-main:local
-DOCKER_SOCKET=/var/run/docker.sock
 ```
 
-`OPENCODE_BIN` is only required when using the legacy `bwrap` mode instead of the Docker worker mode.
-
-The GitHub App private key should be base64-encoded as one line before being stored in Doppler. The raw PEM must not be committed.
-
-The repository-level secret model is intentionally narrow:
+Optional keys:
 
 ```text
-GitHub repository secrets:
-  DOPPLER_TOKEN
-
-Doppler oc-main/main:
-  all application secrets and runtime settings
+DISPATCH_EVENT_TYPE=oc-run
+OPENCODE_BIN=/usr/local/bin/opencode
 ```
 
-Do not configure Doppler GitHub sync to mirror all Doppler values into GitHub Secrets for this repository.
+Generate the worker dispatch secret, for example:
 
-The `doppler-config` workflow validates the expected key names without printing their values.
+```bash
+openssl rand -hex 32
+```
 
-## VPS Docker deployment
+The raw GitHub App PEM must not be committed. Store its single-line base64 representation in Doppler.
 
-The intended deployment directory can be:
+## Bootstrap secret boundary
+
+GitHub repository secrets:
+
+```text
+DOPPLER_TOKEN
+```
+
+VPS bootstrap file:
+
+```text
+/etc/oc-main/runtime-bootstrap
+```
+
+Both contain a read-only Doppler Service Token scoped to `oc-main/main`.
+
+All application configuration and GitHub App secrets remain in Doppler. Do not mirror them into GitHub Secrets.
+
+## VPS deployment
+
+The intended directory is:
 
 ```text
 /home/ubuntu/Desktop/test_all
@@ -132,33 +129,34 @@ The intended deployment directory can be:
 
 Prerequisites:
 
-- Ubuntu VPS
-- Docker Engine
-- Docker Compose plugin
-- ports 80/tcp and 443/tcp+udp available for Caddy
-- Cloudflare DNS record `webhook.oaslananka.dev` pointing to the VPS public IP
+- Docker Engine;
+- Docker Compose plugin;
+- ports 80 and 443 available;
+- Cloudflare DNS for `webhook.oaslananka.dev` pointing to the VPS.
 
-Before deployment, check whether another service already owns ports 80 or 443:
+Check ports first:
 
 ```bash
 sudo ss -ltnp '( sport = :80 or sport = :443 )'
 ```
 
-Create persistent host directories and the single Doppler bootstrap secret:
+Create the bootstrap token file:
 
 ```bash
 sudo install -d -m 0700 /etc/oc-main
 
-printf '%s' 'dp.st....' | sudo tee /etc/oc-main/doppler-token >/dev/null
-sudo chmod 0600 /etc/oc-main/doppler-token
+printf '%s' 'dp.st....' | sudo tee /etc/oc-main/runtime-bootstrap >/dev/null
+sudo chown 1000:1000 /etc/oc-main/runtime-bootstrap
+sudo chmod 0400 /etc/oc-main/runtime-bootstrap
 ```
 
-Deploy the repository:
+Deploy:
 
 ```bash
 cd /home/ubuntu/Desktop/test_all
-
 git clone https://github.com/oaslananka/oc-main.git .
+
+# Until PR #8 is merged:
 git checkout infra/doppler-runtime
 
 sudo ./scripts/compose.sh build
@@ -166,67 +164,54 @@ sudo ./scripts/compose.sh up -d
 sudo ./scripts/compose.sh ps
 ```
 
-Until PR #8 is merged, deploy the `infra/doppler-runtime` branch. After merge, deploy `main` instead.
-
-Follow logs with:
+Logs:
 
 ```bash
 sudo ./scripts/compose.sh logs -f controller caddy
 ```
 
-Stop the whole webhook stack with:
+Stop:
 
 ```bash
 sudo ./scripts/compose.sh down
 ```
 
-Start it again with:
+Start:
 
 ```bash
 sudo ./scripts/compose.sh up -d
 ```
 
-The Caddy service only proxies the exact public path `/oaslananka-ops` to the controller. Other paths on this dedicated hostname return 404.
+The controller container is intentionally lightweight. It has no OpenCode installation and no Docker socket mount.
 
-Caddy manages the HTTPS certificate automatically. If Cloudflare proxying is enabled, use an SSL/TLS mode that validates the origin certificate, such as Full (strict).
+## Cloudflare and GitHub App
 
-## Docker worker security boundary
+Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. Caddy terminates HTTPS and only proxies the exact path `/oaslananka-ops`.
 
-The controller mounts the host Docker socket because it creates short-lived worker containers. Treat the controller container as privileged infrastructure: Docker socket access is effectively host-level container authority.
-
-The application image runs as the non-root `node` user. `scripts/compose.sh` detects the host Docker socket group ID, adds that supplementary group to the controller container, and prepares `/var/lib/oc-main` with UID/GID 1000 ownership so the controller and workers do not need root inside the application image.
-
-The OpenCode worker itself does **not** receive the Docker socket.
-
-Each worker is created with:
-
-- all Linux capabilities dropped;
-- `no-new-privileges`;
-- read-only container root filesystem;
-- private writable `/tmp`;
-- process, memory, and CPU limits;
-- only the current job repository and isolated agent home mounted;
-- target `.git` metadata over-mounted read-only;
-- no GitHub App private key, webhook secret, installation token, or Doppler token.
-
-The worker uses Docker's bridge network so OpenCode Zen and repository-native package/test traffic can reach the internet. Do not expose ambient cloud metadata credentials from the VPS to containers.
-
-## Cloudflare and GitHub App cutover
-
-In Cloudflare:
-
-1. Create or update the DNS record for `webhook.oaslananka.dev` to the VPS public IP.
-2. Ensure inbound TCP 80 and 443 reach the VPS.
-3. If using Cloudflare proxy mode, keep origin TLS validation enabled.
-
-In the existing GitHub App, set the webhook URL to:
+The GitHub App webhook URL for this service is:
 
 ```text
 https://webhook.oaslananka.dev/oaslananka-ops
 ```
 
-Do not reduce the App's unrelated permissions or subscriptions if they are used by other systems. `oc-main` filters deliveries after signature verification and ignores event types it does not own.
+A GitHub App has one webhook configuration. If another live service already consumes that App webhook, put a fan-out/router in front before changing the existing App webhook URL.
+
+## GitHub Actions security boundary
+
+The `opencode-worker` workflow uses Doppler only in the prepare/finalize steps.
+
+The OpenCode execution step itself receives no:
+
+- `DOPPLER_TOKEN`;
+- GitHub App private key;
+- webhook secret;
+- installation token;
+- persisted `actions/checkout` credential.
+
+The control repository checkout sets `persist-credentials: false`.
+
+The target PR is revalidated before push, and pushes are never forced.
 
 ## Current limitation
 
-The in-memory queue and webhook delivery de-duplication state do not survive a controller restart. This is acceptable for the first deployment, but a durable queue should be added before relying on the service for high-volume or long-running automation.
+Webhook delivery de-duplication is in-memory on the VPS controller and does not survive a container restart. For the initial owner-only deployment this is acceptable; a durable store can be added later if needed.

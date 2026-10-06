@@ -45,7 +45,7 @@ function privateKey() {
 }
 
 function webhookPath() {
-  const value = process.env.WEBHOOK_PATH?.trim() || "/webhook";
+  const value = process.env.WEBHOOK_PATH?.trim() || "/oaslananka-ops";
   if (
     !value.startsWith("/") ||
     value.length > 200 ||
@@ -80,28 +80,23 @@ export function loadConfig() {
     }),
   );
 
-  const sandboxMode = (process.env.SANDBOX_MODE || "bwrap").trim();
-  if (!new Set(["docker", "bwrap", "none"]).has(sandboxMode)) {
-    throw new Error("SANDBOX_MODE must be docker, bwrap, or none");
-  }
-
   return {
     port: positiveInteger("PORT", 8787),
     webhookPath: webhookPath(),
     githubAppId: required("GITHUB_APP_ID"),
     githubPrivateKey: privateKey(),
     githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),
+    workerDispatchSecret: required("WORKER_DISPATCH_SECRET"),
+    controlRepository: required("CONTROL_REPOSITORY"),
+    dispatchEventType: process.env.DISPATCH_EVENT_TYPE?.trim() || "oc-run",
     allowedUserIds,
     allowedModels,
     defaultModel,
     opencodeBin: process.env.OPENCODE_BIN?.trim() || "/usr/local/bin/opencode",
-    opencodeWorkerImage:
-      process.env.OPENCODE_WORKER_IMAGE?.trim() || "oc-main:local",
-    dockerSocket:
-      process.env.DOCKER_SOCKET?.trim() || "/var/run/docker.sock",
-    workRoot: path.resolve(process.env.WORK_ROOT?.trim() || "/var/lib/oc-main/jobs"),
-    maxConcurrentJobs: positiveInteger("MAX_CONCURRENT_JOBS", 1),
     opencodeTimeoutMs: positiveInteger("OPENCODE_TIMEOUT_MS", 1_200_000),
-    sandboxMode,
+    actionWorkRoot: path.resolve(
+      process.env.OC_ACTION_WORK_ROOT?.trim() ||
+        path.join(process.env.RUNNER_TEMP || "/tmp", "oc-main-job"),
+    ),
   };
 }

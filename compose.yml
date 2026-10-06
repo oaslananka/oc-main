@@ -2,27 +2,22 @@ name: oc-main
 
 services:
   controller:
-    image: oc-main:local
+    image: oc-main-webhook:local
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    environment:
-      HOME: /var/lib/oc-main/controller-home
-    group_add:
-      - "${DOCKER_GID:-999}"
-    secrets:
-      - runtime_bootstrap
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/oc-main:/var/lib/oc-main
+      - /etc/oc-main/runtime-bootstrap:/run/secrets/runtime_bootstrap:ro
     expose:
       - "8787"
     read_only: true
     tmpfs:
-      - /tmp:rw,nosuid,nodev,noexec,size=64m
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test:
         - CMD
@@ -53,10 +48,6 @@ services:
       - caddy_config:/config
     networks:
       - webhook
-
-secrets:
-  runtime_bootstrap:
-    file: /etc/oc-main/doppler-token
 
 volumes:
   caddy_data:

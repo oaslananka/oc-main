@@ -1,23 +1,24 @@
 import http from "node:http";
 import { loadConfig } from "./config.mjs";
 import { parseCommand } from "./command.mjs";
-import { JobQueue } from "./queue.mjs";
-import { runPullRequestJob } from "./runner.mjs";
+import { createSignedJob } from "./dispatch.mjs";
+import { dispatchRepositoryEvent } from "./github.mjs";
 import { extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
 
 const config = loadConfig();
-const queue = new JobQueue(config.maxConcurrentJobs);
 const seenDeliveries = new Set();
 
+function isDuplicate(id) {
+  return Boolean(id && seenDeliveries.has(id));
+}
+
 function rememberDelivery(id) {
-  if (!id) return true;
-  if (seenDeliveries.has(id)) return false;
+  if (!id) return;
   seenDeliveries.add(id);
   if (seenDeliveries.size > 10_000) {
     const oldest = seenDeliveries.values().next().value;
     seenDeliveries.delete(oldest);
   }
-  return true;
 }
 
 async function readBody(request, maxBytes = 2_000_000) {
@@ -56,7 +57,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     const deliveryId = request.headers["x-github-delivery"];
-    if (!rememberDelivery(deliveryId)) {
+    if (isDuplicate(deliveryId)) {
       respond(response, 202, "duplicate\n");
       return;
     }
@@ -65,33 +66,49 @@ const server = http.createServer(async (request, response) => {
     const payload = JSON.parse(rawBody.toString("utf8"));
     const trigger = extractPullRequestTrigger(eventName, payload);
     if (!trigger) {
+      rememberDelivery(deliveryId);
       respond(response, 202, "ignored\n");
       return;
     }
 
     if (!config.allowedUserIds.has(trigger.commentUserId)) {
+      rememberDelivery(deliveryId);
       respond(response, 202, "ignored\n");
       return;
     }
 
     const command = parseCommand(trigger.commentBody, config);
     if (!command) {
+      rememberDelivery(deliveryId);
       respond(response, 202, "ignored\n");
       return;
     }
 
-    if (!trigger.repository || !trigger.pullNumber || !trigger.installationId) {
+    if (!trigger.repository || !trigger.pullNumber || !trigger.commentId) {
       throw new Error("Webhook payload is missing required repository or PR metadata");
     }
 
-    queue.enqueue(() => runPullRequestJob({ config, trigger, command }));
+    const job = createSignedJob(
+      trigger,
+      command,
+      config.workerDispatchSecret,
+    );
+
+    await dispatchRepositoryEvent(
+      config,
+      config.controlRepository,
+      config.dispatchEventType,
+      job,
+    );
+
+    rememberDelivery(deliveryId);
     console.log(
-      `queued ${trigger.repository}#${trigger.pullNumber} from ${trigger.commentUserLogin || trigger.commentUserId}`,
+      `dispatched ${trigger.repository}#${trigger.pullNumber} from ${trigger.commentUserLogin || trigger.commentUserId}`,
     );
     respond(response, 202, "queued\n");
   } catch (error) {
     console.error("webhook error", error);
-    respond(response, 400, "bad request\n");
+    respond(response, 500, "dispatch failed\n");
   }
 });
 
