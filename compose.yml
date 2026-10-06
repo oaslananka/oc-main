@@ -8,12 +8,11 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DOPPLER_TOKEN_FILE: /run/secrets/doppler_token
       HOME: /var/lib/oc-main/controller-home
     group_add:
       - "${DOCKER_GID:-999}"
     secrets:
-      - doppler_token
+      - runtime_bootstrap
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/oc-main:/var/lib/oc-main
@@ -56,7 +55,7 @@ services:
       - webhook
 
 secrets:
-  doppler_token:
+  runtime_bootstrap:
     file: /etc/oc-main/doppler-token
 
 volumes:

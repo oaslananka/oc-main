@@ -3,6 +3,10 @@ set -euo pipefail
 
 TOKEN_FILE="${DOPPLER_TOKEN_FILE:-}"
 
+if [[ -z "$TOKEN_FILE" && -r /run/secrets/runtime_bootstrap ]]; then
+  TOKEN_FILE="/run/secrets/runtime_bootstrap"
+fi
+
 if [[ -z "$TOKEN_FILE" && -n "${CREDENTIALS_DIRECTORY:-}" ]]; then
   TOKEN_FILE="${CREDENTIALS_DIRECTORY}/doppler-token"
 fi
