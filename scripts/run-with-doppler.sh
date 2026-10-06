@@ -17,6 +17,5 @@ if [[ -z "$DOPPLER_TOKEN" ]]; then
   exit 1
 fi
 
-install -d -m 0700 /var/lib/oc-main/doppler
 
 exec /usr/local/bin/doppler run   --project oc-main   --config main   --config-dir /var/lib/oc-main/doppler   --fallback=/var/lib/oc-main/doppler/fallback.json   -- /usr/bin/env -u DOPPLER_TOKEN /usr/bin/node /opt/oc-main/src/server.mjs

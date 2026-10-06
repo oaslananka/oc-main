@@ -134,7 +134,7 @@ sudo systemctl status oc-main
 
 At startup, systemd exposes the bootstrap token as a credential only to the wrapper. Doppler injects the `oc-main/main` values, and the wrapper removes `DOPPLER_TOKEN` before launching Node. OpenCode is started later with a separate minimal environment that excludes GitHub and Doppler credentials.
 
-Doppler stores its encrypted fallback under `/var/lib/oc-main/doppler/fallback.json`. That path is outside the repository and is writable only by the service account.
+The production wrapper intentionally does not enable a Doppler fallback file, so application secrets are not cached as a local fallback bundle. If Doppler is unavailable, startup fails rather than silently switching to a local secrets copy.
 
 Expose the service to GitHub over HTTPS using the reverse proxy or ingress already used by the host. Do not expose the webhook endpoint without TLS.
 
