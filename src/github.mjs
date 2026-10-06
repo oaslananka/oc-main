@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
+import https from "node:https";
 
-const API = new URL("https://api.github.com/");
+const API_HOSTNAME = "api.github.com";
 const API_VERSION = "2022-11-28";
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_BYTES = 5_000_000;
 
 function base64url(value) {
   return Buffer.from(value)
@@ -23,7 +25,7 @@ function appJwt(appId, privateKey) {
   return `${unsigned}.${base64url(signature)}`;
 }
 
-export function apiUrl(pathname) {
+export function apiPath(pathname) {
   const relative = String(pathname).replace(/^\/+/, "");
   if (!relative || relative.includes("\\") || relative.includes("://")) {
     throw new Error("Refusing invalid GitHub API path");
@@ -46,11 +48,7 @@ export function apiUrl(pathname) {
     }
   }
 
-  const url = new URL(relative, API);
-  if (url.origin !== API.origin) {
-    throw new Error("Refusing unexpected GitHub API origin");
-  }
-  return url;
+  return `/${relative}`;
 }
 
 function repositoryPath(repository) {
@@ -82,38 +80,78 @@ function positiveId(value, label) {
 }
 
 async function request(pathname, { token, method = "GET", body } = {}) {
-  const response = await fetch(apiUrl(pathname), {
-    method,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": API_VERSION,
-      "User-Agent": "oc-main",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  const payload = body ? JSON.stringify(body) : null;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": API_VERSION,
+    "User-Agent": "oc-main",
+    ...(payload
+      ? {
+          "Content-Type": "application/json",
+          "Content-Length": String(Buffer.byteLength(payload)),
+        }
+      : {}),
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: "https:",
+        hostname: API_HOSTNAME,
+        port: 443,
+        path: apiPath(pathname),
+        method,
+        headers,
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks = [];
+        let size = 0;
+
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_RESPONSE_BYTES) {
+            req.destroy(new Error("GitHub API response exceeded the size limit"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          let parsed = null;
+          if (text) {
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = text;
+            }
+          }
+
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
+            const message =
+              typeof parsed === "object" && parsed?.message
+                ? parsed.message
+                : `GitHub API request failed (${status})`;
+            reject(new Error(message));
+            return;
+          }
+
+          resolve(parsed);
+        });
+      },
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("GitHub API request timed out"));
+    });
+    req.on("error", reject);
+
+    if (payload) req.write(payload);
+    req.end();
   });
-
-  const text = await response.text();
-  let parsed = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  if (!response.ok) {
-    const message =
-      typeof parsed === "object" && parsed?.message
-        ? parsed.message
-        : `GitHub API request failed (${response.status})`;
-    throw new Error(message);
-  }
-
-  return parsed;
 }
 
 export async function createInstallationToken(config, installationId) {

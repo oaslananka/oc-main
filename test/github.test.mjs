@@ -1,32 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiUrl } from "../src/github.mjs";
+import { apiPath } from "../src/github.mjs";
 
-test("apiUrl keeps requests on the GitHub API origin", () => {
+test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
-    apiUrl("repos/owner/repo/pulls/1").toString(),
-    "https://api.github.com/repos/owner/repo/pulls/1",
+    apiPath("repos/owner/repo/pulls/1"),
+    "/repos/owner/repo/pulls/1",
   );
 });
 
-test("apiUrl rejects path traversal", () => {
+test("apiPath rejects path traversal", () => {
   assert.throws(
-    () => apiUrl("repos/owner/../issues"),
+    () => apiPath("repos/owner/../issues"),
     /path traversal/,
   );
   assert.throws(
-    () => apiUrl("repos/owner/%2e%2e/issues"),
+    () => apiPath("repos/owner/%2e%2e/issues"),
     /path traversal/,
   );
   assert.throws(
-    () => apiUrl("repos/owner/%2Fadmin"),
+    () => apiPath("repos/owner/%2Fadmin"),
     /path traversal/,
   );
 });
 
-test("apiUrl rejects absolute non-GitHub URLs", () => {
+test("apiPath rejects absolute URLs", () => {
   assert.throws(
-    () => apiUrl("https://example.com/anything"),
+    () => apiPath("https://example.com/anything"),
     /invalid GitHub API path/,
   );
 });
