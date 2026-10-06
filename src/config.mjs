@@ -44,6 +44,21 @@ function privateKey() {
   );
 }
 
+function webhookPath() {
+  const value = process.env.WEBHOOK_PATH?.trim() || "/webhook";
+  if (
+    !value.startsWith("/") ||
+    value.length > 200 ||
+    value.includes("?") ||
+    value.includes("#") ||
+    value.includes("\\") ||
+    value.split("/").some((segment) => segment === "." || segment === "..")
+  ) {
+    throw new Error("WEBHOOK_PATH must be a safe absolute URL path");
+  }
+  return value;
+}
+
 export function loadConfig() {
   const allowedModels = new Set(
     csv(process.env.ALLOWED_MODELS || CURRENT_DEFAULT_MODELS.join(",")),
@@ -66,12 +81,13 @@ export function loadConfig() {
   );
 
   const sandboxMode = (process.env.SANDBOX_MODE || "bwrap").trim();
-  if (!new Set(["bwrap", "none"]).has(sandboxMode)) {
-    throw new Error("SANDBOX_MODE must be bwrap or none");
+  if (!new Set(["docker", "bwrap", "none"]).has(sandboxMode)) {
+    throw new Error("SANDBOX_MODE must be docker, bwrap, or none");
   }
 
   return {
     port: positiveInteger("PORT", 8787),
+    webhookPath: webhookPath(),
     githubAppId: required("GITHUB_APP_ID"),
     githubPrivateKey: privateKey(),
     githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),
@@ -79,6 +95,10 @@ export function loadConfig() {
     allowedModels,
     defaultModel,
     opencodeBin: process.env.OPENCODE_BIN?.trim() || "/usr/local/bin/opencode",
+    opencodeWorkerImage:
+      process.env.OPENCODE_WORKER_IMAGE?.trim() || "oc-main:local",
+    dockerSocket:
+      process.env.DOCKER_SOCKET?.trim() || "/var/run/docker.sock",
     workRoot: path.resolve(process.env.WORK_ROOT?.trim() || "/var/lib/oc-main/jobs"),
     maxConcurrentJobs: positiveInteger("MAX_CONCURRENT_JOBS", 1),
     opencodeTimeoutMs: positiveInteger("OPENCODE_TIMEOUT_MS", 1_200_000),

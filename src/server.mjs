@@ -42,7 +42,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || request.url !== "/webhook") {
+  if (request.method !== "POST" || request.url !== config.webhookPath) {
     respond(response, 404, "not found\n");
     return;
   }
@@ -96,5 +96,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(config.port, "0.0.0.0", () => {
-  console.log(`oc-main listening on :${config.port}`);
+  console.log(
+    `oc-main listening on :${config.port} at ${config.webhookPath}`,
+  );
 });

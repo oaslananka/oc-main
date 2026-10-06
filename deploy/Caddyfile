@@ -1,0 +1,11 @@
+webhook.oaslananka.dev {
+	@oaslananka_ops path /oaslananka-ops
+
+	handle @oaslananka_ops {
+		reverse_proxy controller:8787
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}

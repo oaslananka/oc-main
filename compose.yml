@@ -1,0 +1,66 @@
+name: oc-main
+
+services:
+  controller:
+    image: oc-main:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DOPPLER_TOKEN_FILE: /run/secrets/doppler_token
+      HOME: /var/lib/oc-main/controller-home
+    secrets:
+      - doppler_token
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/oc-main:/var/lib/oc-main
+    expose:
+      - "8787"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          require('http').get('http://127.0.0.1:8787/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - webhook
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    depends_on:
+      controller:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - webhook
+
+secrets:
+  doppler_token:
+    file: /etc/oc-main/doppler-token
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  webhook:
+    driver: bridge

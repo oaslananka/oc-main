@@ -4,41 +4,56 @@
 
 `oc-main` is a central GitHub App webhook service. Target repositories do not need an `oc-main` workflow or integration file. The GitHub App must be installed on every repository the service is allowed to operate on.
 
-OpenCode is installed as a CLI on the Ubuntu host. The service does not use the OpenCode GitHub Action and does not require an OpenCode provider API key for the configured free Zen models.
+The GitHub App may keep unrelated permissions and webhook subscriptions for other systems. `oc-main` only handles the event types it explicitly recognizes; unrelated webhook deliveries are acknowledged and ignored.
 
-Doppler project `oc-main`, config `main`, is the runtime source of truth. The application itself does not use local environment files for GitHub App credentials or operating settings. A read-only Doppler Service Token is the single bootstrap credential outside Doppler.
+Production deployment uses Docker Compose on Ubuntu:
+
+- Caddy terminates HTTPS for `webhook.oaslananka.dev`.
+- The controller receives the GitHub App webhook at `/oaslananka-ops`.
+- The controller reads runtime settings and secrets from Doppler `oc-main/main`.
+- Each OpenCode run is executed by the real OpenCode CLI inside a short-lived Docker worker container.
+- The OpenCode GitHub Action is not used.
+- Free Zen models are used without a provider API key.
+- GitHub and Doppler credentials remain controller-side and are not passed into the OpenCode worker.
 
 Each accepted PR command is processed as follows:
 
 1. Verify the GitHub webhook HMAC.
 2. Require the comment author's numeric GitHub user ID to be allowlisted.
-3. Mint a short-lived GitHub App installation token.
-4. Read the PR head repository, branch, and exact head SHA.
-5. Clone that branch into a temporary job directory.
-6. Run `opencode run --model ...` in a bubblewrap sandbox with no GitHub or Doppler credentials in the OpenCode environment.
-7. Verify the PR head has not changed while the job was running.
-8. Commit any workspace change locally and push without force.
-9. Post the result to the PR and remove the temporary job directory.
+3. Require an accepted `/oc` or `/opencode` command.
+4. Mint a short-lived GitHub App installation token.
+5. Read the PR head repository, branch, and exact head SHA.
+6. Clone that branch into a temporary job directory.
+7. Start a short-lived OpenCode worker container with only the repository workspace and isolated agent home mounted.
+8. Over-mount the target checkout's `.git` directory read-only inside the worker.
+9. Run `opencode run --model ...` with no GitHub or Doppler credentials in the worker environment.
+10. Verify the PR head has not changed while the job was running.
+11. Commit any workspace change locally in the controller and push without force.
+12. Post the result to the PR and remove the temporary job directory.
 
-## GitHub App permissions
+## GitHub App behavior
 
-Repository permissions required by the current implementation:
+The App can remain fully permissioned and subscribed for other owner systems. `oc-main` does not depend on reducing those App-level settings.
+
+The current `oc-main` webhook handler only interprets:
+
+- `issue_comment` with action `created`, and only when the issue is a pull request;
+- `pull_request_review_comment` with action `created`.
+
+All other GitHub webhook event names are ignored by `oc-main`.
+
+For accepted events, the current implementation needs these repository capabilities from the App installation:
 
 - Contents: Read and write
 - Issues: Read and write
 - Pull requests: Read and write
 - Metadata: Read-only
 
-Subscribe the App to these repository events:
+The public webhook URL is:
 
-- Issue comment
-- Pull request review comment
+`https://webhook.oaslananka.dev/oaslananka-ops`
 
-The webhook URL should point to:
-
-`POST /webhook`
-
-Health checks can use:
+The controller health endpoint remains internal:
 
 `GET /healthz`
 
@@ -68,24 +83,28 @@ Comments from any other GitHub user are acknowledged and ignored.
 
 ## Doppler configuration
 
-Use Doppler project `oc-main`, config `main`. Create a **read-only Service Token** scoped to this single config for production use. Do not use a personal or CLI token in production.
+Use Doppler project `oc-main`, config `main`. Use a read-only Service Token scoped to this single config for production. Do not use a personal or CLI token in production.
 
-The config must contain these keys:
+For the Docker deployment, the config must contain:
 
 ```text
 PORT=8787
+WEBHOOK_PATH=/oaslananka-ops
 GITHUB_APP_ID=<github app id>
 GITHUB_APP_PRIVATE_KEY_BASE64=<base64 encoded PEM private key>
 GITHUB_WEBHOOK_SECRET=<github app webhook secret>
 ALLOWED_GITHUB_USER_IDS=285490571
 DEFAULT_MODEL=opencode/nemotron-3.5-lightning-free
 ALLOWED_MODELS=opencode/nemotron-3.5-lightning-free,opencode/nemotron-3-ultra-free,opencode/mimo-v2.6-flash-free,opencode/mimo-v2.5-free,opencode/muse-spark-1.3-contributor-free,opencode/big-pickle
-OPENCODE_BIN=/usr/local/bin/opencode
 WORK_ROOT=/var/lib/oc-main/jobs
 MAX_CONCURRENT_JOBS=1
 OPENCODE_TIMEOUT_MS=1200000
-SANDBOX_MODE=bwrap
+SANDBOX_MODE=docker
+OPENCODE_WORKER_IMAGE=oc-main:local
+DOCKER_SOCKET=/var/run/docker.sock
 ```
+
+`OPENCODE_BIN` is only required when using the legacy `bwrap` mode instead of the Docker worker mode.
 
 The GitHub App private key should be base64-encoded as one line before being stored in Doppler. The raw PEM must not be committed.
 
@@ -93,61 +112,120 @@ The repository-level secret model is intentionally narrow:
 
 ```text
 GitHub repository secrets:
-  DOPPLER_TOKEN   # only secret used by the manual Doppler validation workflow
+  DOPPLER_TOKEN
 
 Doppler oc-main/main:
   all application secrets and runtime settings
 ```
 
-Do not configure the Doppler GitHub sync integration to mirror all Doppler values into GitHub Secrets for this repository. That would defeat the one-bootstrap-secret boundary.
+Do not configure Doppler GitHub sync to mirror all Doppler values into GitHub Secrets for this repository.
 
-Run the manual `doppler-config` workflow after adding `DOPPLER_TOKEN` to the repository. It validates the required key names without printing their values.
+The `doppler-config` workflow validates the expected key names without printing their values.
 
-## Ubuntu host bootstrap
+## VPS Docker deployment
 
-Run `scripts/bootstrap-ubuntu.sh` on the Ubuntu host. It installs the required OS packages, the pinned OpenCode CLI release, and Doppler CLI `3.76.6`. Both downloaded CLI archives are verified against pinned SHA-256 digests before installation.
+The intended deployment directory can be:
 
-Create the service user and directories:
-
-```bash
-sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin ocmain || true
-sudo install -d -o ocmain -g ocmain -m 0700 /var/lib/oc-main /var/lib/oc-main/jobs
-sudo install -d -o root -g root -m 0755 /opt/oc-main
-sudo install -d -o root -g root -m 0700 /etc/oc-main
+```text
+/home/ubuntu/Desktop/test_all
 ```
 
-Put only the read-only Doppler Service Token into the systemd credential file:
+Prerequisites:
+
+- Ubuntu VPS
+- Docker Engine
+- Docker Compose plugin
+- ports 80/tcp and 443/tcp+udp available for Caddy
+- Cloudflare DNS record `webhook.oaslananka.dev` pointing to the VPS public IP
+
+Before deployment, check whether another service already owns ports 80 or 443:
 
 ```bash
+sudo ss -ltnp '( sport = :80 or sport = :443 )'
+```
+
+Create persistent host directories and the single Doppler bootstrap secret:
+
+```bash
+sudo install -d -m 0700 /etc/oc-main
+sudo install -d -m 0700 /var/lib/oc-main /var/lib/oc-main/jobs
+
 printf '%s' 'dp.st....' | sudo tee /etc/oc-main/doppler-token >/dev/null
 sudo chmod 0600 /etc/oc-main/doppler-token
 ```
 
-Deploy the repository contents to `/opt/oc-main`, then install and start the unit:
+Deploy the repository:
 
 ```bash
-sudo cp deploy/oc-main.service /etc/systemd/system/oc-main.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now oc-main
-sudo systemctl status oc-main
+cd /home/ubuntu/Desktop/test_all
+
+git clone https://github.com/oaslananka/oc-main.git .
+git checkout infra/doppler-runtime
+
+sudo docker compose -f compose.yml build
+sudo docker compose -f compose.yml up -d
+sudo docker compose -f compose.yml ps
 ```
 
-At startup, systemd exposes the bootstrap token as a credential only to the wrapper. Doppler injects the `oc-main/main` values, and the wrapper removes `DOPPLER_TOKEN` before launching Node. OpenCode is started later with a separate minimal environment that excludes GitHub and Doppler credentials.
+Until PR #8 is merged, deploy the `infra/doppler-runtime` branch. After merge, deploy `main` instead.
 
-The production wrapper intentionally does not enable a Doppler fallback file, so application secrets are not cached as a local fallback bundle. If Doppler is unavailable, startup fails rather than silently switching to a local secrets copy.
+Follow logs with:
 
-Expose the service to GitHub over HTTPS using the reverse proxy or ingress already used by the host. Do not expose the webhook endpoint without TLS.
+```bash
+sudo docker compose -f compose.yml logs -f controller caddy
+```
 
-## Sandbox boundary
+Stop the whole webhook stack with:
 
-Production should keep `SANDBOX_MODE=bwrap`. `SANDBOX_MODE=none` exists only for local debugging and should not be used for webhook-driven production work.
+```bash
+sudo docker compose -f compose.yml down
+```
 
-The OpenCode process receives a minimal environment without GitHub App secrets, installation tokens, or the Doppler Service Token. The sandbox mounts the target checkout read/write and mounts system binaries and certificates read-only. Git transport remains controller-owned.
+Start it again with:
+
+```bash
+sudo docker compose -f compose.yml up -d
+```
+
+The Caddy service only proxies the exact public path `/oaslananka-ops` to the controller. Other paths on this dedicated hostname return 404.
+
+Caddy manages the HTTPS certificate automatically. If Cloudflare proxying is enabled, use an SSL/TLS mode that validates the origin certificate, such as Full (strict).
+
+## Docker worker security boundary
+
+The controller mounts the host Docker socket because it creates short-lived worker containers. Treat the controller container as privileged infrastructure: Docker socket access is effectively host-level container authority.
+
+The OpenCode worker itself does **not** receive the Docker socket.
+
+Each worker is created with:
+
+- all Linux capabilities dropped;
+- `no-new-privileges`;
+- read-only container root filesystem;
+- private writable `/tmp`;
+- process, memory, and CPU limits;
+- only the current job repository and isolated agent home mounted;
+- target `.git` metadata over-mounted read-only;
+- no GitHub App private key, webhook secret, installation token, or Doppler token.
+
+The worker uses Docker's bridge network so OpenCode Zen and repository-native package/test traffic can reach the internet. Do not expose ambient cloud metadata credentials from the VPS to containers.
+
+## Cloudflare and GitHub App cutover
+
+In Cloudflare:
+
+1. Create or update the DNS record for `webhook.oaslananka.dev` to the VPS public IP.
+2. Ensure inbound TCP 80 and 443 reach the VPS.
+3. If using Cloudflare proxy mode, keep origin TLS validation enabled.
+
+In the existing GitHub App, set the webhook URL to:
+
+```text
+https://webhook.oaslananka.dev/oaslananka-ops
+```
+
+Do not reduce the App's unrelated permissions or subscriptions if they are used by other systems. `oc-main` filters deliveries after signature verification and ignores event types it does not own.
 
 ## Current limitation
 
-The in-memory queue and webhook delivery de-duplication state do not survive a service restart. This is acceptable for the first deployment, but a durable queue should be added before relying on the service for high-volume or long-running automation.
-
-## Host egress
-
-The OpenCode sandbox shares the host network namespace so free-model access and repository-native package/test traffic can work. Do not run this service on a host that exposes ambient cloud credentials to untrusted workloads. In cloud environments, block instance-metadata credential endpoints such as `169.254.169.254` from the service account or host firewall unless they are explicitly required and safely brokered.
+The in-memory queue and webhook delivery de-duplication state do not survive a controller restart. This is acceptable for the first deployment, but a durable queue should be added before relying on the service for high-volume or long-running automation.

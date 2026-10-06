@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${CREDENTIALS_DIRECTORY:?systemd credentials directory is required}"
+TOKEN_FILE="${DOPPLER_TOKEN_FILE:-}"
 
-TOKEN_FILE="${CREDENTIALS_DIRECTORY}/doppler-token"
-if [[ ! -r "$TOKEN_FILE" ]]; then
+if [[ -z "$TOKEN_FILE" && -n "${CREDENTIALS_DIRECTORY:-}" ]]; then
+  TOKEN_FILE="${CREDENTIALS_DIRECTORY}/doppler-token"
+fi
+
+if [[ -z "$TOKEN_FILE" || ! -r "$TOKEN_FILE" ]]; then
   echo "Doppler credential is unavailable" >&2
   exit 1
 fi
@@ -17,5 +20,9 @@ if [[ -z "$DOPPLER_TOKEN" ]]; then
   exit 1
 fi
 
+install -d -m 0700 "${HOME:-/var/lib/oc-main/controller-home}" /var/lib/oc-main/jobs
 
-exec /usr/local/bin/doppler run   --project oc-main   --config main   --config-dir /var/lib/oc-main/doppler   --fallback=/var/lib/oc-main/doppler/fallback.json   -- /usr/bin/env -u DOPPLER_TOKEN /usr/bin/node /opt/oc-main/src/server.mjs
+exec /usr/local/bin/doppler run \
+  --project oc-main \
+  --config main \
+  -- /usr/bin/env -u DOPPLER_TOKEN node /opt/oc-main/src/server.mjs

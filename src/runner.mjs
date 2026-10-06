@@ -81,7 +81,10 @@ export async function runPullRequestJob({ config, trigger, command }) {
     const result = await runOpenCode({
       repositoryDir: repoDir,
       homeDir,
+      workRoot: config.workRoot,
       opencodeBin: config.opencodeBin,
+      opencodeWorkerImage: config.opencodeWorkerImage,
+      dockerSocket: config.dockerSocket,
       model: command.model,
       prompt,
       sandboxMode: config.sandboxMode,

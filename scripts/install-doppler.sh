@@ -27,6 +27,11 @@ curl --fail --silent --show-error --location --proto "=https" --proto-redir "=ht
   -o "$tmp/doppler.tar.gz"
 echo "${SHA256}  $tmp/doppler.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/doppler.tar.gz" -C "$tmp"
-sudo install -m 0755 "$tmp/doppler" /usr/local/bin/doppler
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  install -m 0755 "$tmp/doppler" /usr/local/bin/doppler
+else
+  sudo install -m 0755 "$tmp/doppler" /usr/local/bin/doppler
+fi
 
 /usr/local/bin/doppler --version

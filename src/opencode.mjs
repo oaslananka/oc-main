@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runDockerOpenCode } from "./docker.mjs";
 import { runProcess } from "./process.mjs";
 
 function minimalEnvironment(home) {
@@ -93,12 +94,28 @@ function bwrapArgs({ repositoryDir, homeDir, opencodeBin, model, prompt }) {
 export async function runOpenCode({
   repositoryDir,
   homeDir,
+  workRoot,
   opencodeBin,
+  opencodeWorkerImage,
+  dockerSocket,
   model,
   prompt,
   sandboxMode,
   timeoutMs,
 }) {
+  if (sandboxMode === "docker") {
+    return runDockerOpenCode({
+      repositoryDir,
+      homeDir,
+      workRoot,
+      dockerSocket,
+      workerImage: opencodeWorkerImage,
+      model,
+      prompt,
+      timeoutMs,
+    });
+  }
+
   if (!fs.existsSync(opencodeBin)) {
     throw new Error(`OpenCode CLI not found at ${opencodeBin}`);
   }
