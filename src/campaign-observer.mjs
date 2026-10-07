@@ -6,7 +6,7 @@ import {
 } from "./github.mjs";
 import { fetchMaintenanceQualityContext } from "./quality-context.mjs";
 
-export const CAMPAIGN_OBSERVER_MAX_ATTEMPTS = 4;
+export const CAMPAIGN_OBSERVER_MAX_ATTEMPTS = 7;
 export const CAMPAIGN_OBSERVER_DELAY_MS = 20_000;
 
 function sleep(ms) {

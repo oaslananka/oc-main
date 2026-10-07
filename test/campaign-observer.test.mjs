@@ -322,3 +322,46 @@ test("stops without status writes when signed campaign state disappears", async 
   assert.deepEqual(harness.statusUpdates, []);
   assert.deepEqual(harness.sleeps, []);
 });
+
+test("settles a slow required check within the two-minute trusted window", async () => {
+  const pending = evidence({ pending: 1, requiredReady: false });
+  const blocking = evidence({ blocking: 1, requiredReady: false });
+  const harness = observerHarness([
+    pending,
+    pending,
+    pending,
+    pending,
+    pending,
+    pending,
+    blocking,
+  ]);
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: state(),
+    readToken: "read",
+    statusToken: "write",
+    campaignStateSecret: "secret",
+    attempts: CAMPAIGN_OBSERVER_MAX_ATTEMPTS,
+    delayMs: 20_000,
+    ...harness,
+  });
+
+  assert.equal(CAMPAIGN_OBSERVER_MAX_ATTEMPTS, 7);
+  assert.equal(result.attempt, 7);
+  assert.equal(result.decision.action, "retry-eligible");
+  assert.equal(result.decision.reason, "blocking-regression");
+  assert.equal(harness.sleeps.length, 6);
+  assert.deepEqual(
+    harness.statusUpdates.map((status) => status.phase),
+    [
+      "waiting-checks",
+      "waiting-checks",
+      "waiting-checks",
+      "waiting-checks",
+      "waiting-checks",
+      "waiting-checks",
+      "ready-remediation",
+    ],
+  );
+});
