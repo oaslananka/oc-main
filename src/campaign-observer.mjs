@@ -182,8 +182,7 @@ export async function observeMaintenanceCampaignCurrentHead({
     throw new Error("Invalid campaign observer delay");
   }
 
-  let last = null;
-  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+  async function observeAttempt(attempt) {
     const snapshot = await collectCurrentHeadSnapshot({
       repository,
       pullNumber,
@@ -228,17 +227,19 @@ export async function observeMaintenanceCampaignCurrentHead({
       statusToken,
     );
 
-    last = {
+    const result = {
       attempt,
       decision,
       currentHead: snapshot.currentHead,
       evidence: snapshot.evidence,
     };
     if (!shouldContinueObservation(decision) || attempt === maximumAttempts) {
-      return last;
+      return result;
     }
+
     await sleepImpl(waitMs);
+    return observeAttempt(attempt + 1);
   }
 
-  return last;
+  return observeAttempt(1);
 }
