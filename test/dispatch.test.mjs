@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSignedJob, verifySignedJob } from "../src/dispatch.mjs";
+import { createSignedJob, unwrapSignedJob, verifySignedJob, wrapSignedJob } from "../src/dispatch.mjs";
 
 const signingKey = "unit-test-signing-key".repeat(2);
 
@@ -42,4 +42,17 @@ test("rejects tampered capability profiles", () => {
 test("rejects expired worker jobs", () => {
   const job = makeJob();
   assert.throws(() => verifySignedJob(job, signingKey, job.issued_at + 31 * 60), /expired/);
+});
+
+test("wraps repository dispatch payload in one top-level property", () => {
+  const job = makeJob();
+  const envelope = wrapSignedJob(job);
+  assert.deepEqual(Object.keys(envelope), ["job"]);
+  assert.equal(unwrapSignedJob(envelope), job);
+});
+
+test("rejects malformed repository dispatch envelopes", () => {
+  const job = makeJob();
+  assert.throws(() => unwrapSignedJob(job), /Invalid worker envelope/);
+  assert.throws(() => unwrapSignedJob({ job, extra: true }), /Invalid worker envelope/);
 });
