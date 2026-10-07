@@ -124,6 +124,7 @@ async function main() {
         phase: decision.statusPhase,
         evidence: snapshot.evidence,
         workerRunId: process.env.GITHUB_RUN_ID || null,
+        decisionReason: decision.reason,
       },
       writeToken,
     );
