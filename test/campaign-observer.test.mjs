@@ -94,6 +94,7 @@ function observerHarness(
     },
     sleepImpl: async (ms) => { sleeps.push(ms); },
   };
+}
 
 async function observeSupersededCampaign(campaignStates) {
   const origin = campaignStates[0];
@@ -110,8 +111,6 @@ async function observeSupersededCampaign(campaignStates) {
     ...harness,
   });
   return { result, harness };
-}
-
 }
 
 test("waits on pending checks then stops on a clean settled head", async () => {
