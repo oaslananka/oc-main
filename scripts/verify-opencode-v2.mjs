@@ -19,12 +19,16 @@ function ruleIndex(rules, action, resource, effect) {
 function assertGitTransportDenied(agent) {
   const rules = agent.permissions || [];
   for (const resource of [
-    "*git push*",
-    "*git commit*",
-    "*git remote*",
+    "*git*push*",
+    "*git*commit*",
+    "*git*remote*",
+    "*git*config*",
   ]) {
     const deny = ruleIndex(rules, "shell", resource, "deny");
-    assert.ok(deny >= 0, agent.id + " is missing shell deny for " + resource);
+    assert.ok(
+      deny >= 0,
+      agent.id + " is missing shell deny for " + resource,
+    );
     const laterBroadAllow = rules
       .slice(deny + 1)
       .some(
@@ -36,7 +40,8 @@ function assertGitTransportDenied(agent) {
     assert.equal(
       laterBroadAllow,
       false,
-      agent.id + " overrides a Git transport deny with a later broad shell allow",
+      agent.id +
+        " overrides a Git transport deny with a later broad shell allow",
     );
   }
 }
@@ -46,32 +51,22 @@ if (target === "config") {
   const document = data.find(
     (entry) =>
       entry?.type === "document" &&
-      entry?.info?.default_agent === "orchestrator",
+      entry?.info?.default_agent === "build",
   );
   assert.ok(document, "trusted OpenCode config document was not loaded");
+
   const info = document.info;
   assert.equal(info.update, "disable");
   assert.equal(info.share, "disabled");
   assert.equal(info.lsp, false);
   assert.deepEqual(info.skills, ["~/.config/opencode/skills"]);
   assert.deepEqual(info.instructions, ["~/.config/opencode/AGENTS.md"]);
-  const configuredAgentIds = new Set(Object.keys(info.agents || {}));
-  for (const id of [
-    "orchestrator",
-    "planner",
-    "researcher",
-    "implementer",
-    "reviewer",
-    "security-reviewer",
-    "test-engineer",
-    "ci-debugger",
-    "release-engineer",
-  ]) {
-    assert.ok(
-      configuredAgentIds.has(id),
-      "trusted config is missing agent " + id,
-    );
-  }
+  assert.equal(
+    Object.keys(info.agents || {}).length,
+    0,
+    "runtime config must not define custom agents on Console free-tier",
+  );
+
   assert.equal(info.mcp?.servers?.context7?.type, "remote");
   assert.equal(
     info.mcp?.servers?.context7?.url,
@@ -84,6 +79,22 @@ if (target === "config") {
 } else if (target === "agents") {
   assert.ok(Array.isArray(data));
   const byId = new Map(data.map((agent) => [agent.id, agent]));
+
+  for (const id of ["build", "plan"]) {
+    assert.ok(byId.has(id), "missing built-in agent " + id);
+    assertGitTransportDenied(byId.get(id));
+    assert.ok(
+      ruleIndex(byId.get(id).permissions, "subagent", "*", "deny") >= 0,
+      id + " must deny custom subagent execution",
+    );
+  }
+
+  const plan = byId.get("plan");
+  assert.ok(
+    ruleIndex(plan.permissions, "edit", "*", "deny") >= 0,
+    "built-in plan must remain edit-denied",
+  );
+
   for (const id of [
     "orchestrator",
     "planner",
@@ -95,53 +106,14 @@ if (target === "config") {
     "ci-debugger",
     "release-engineer",
   ]) {
-    assert.ok(byId.has(id), "missing trusted agent " + id);
+    assert.equal(
+      byId.has(id),
+      false,
+      "custom free-tier-incompatible agent must not be registered: " + id,
+    );
   }
 
-  for (const id of [
-    "implementer",
-    "ci-debugger",
-    "release-engineer",
-    "test-engineer",
-  ]) {
-    assertGitTransportDenied(byId.get(id));
-  }
-
-  const orchestrator = byId.get("orchestrator");
-  assert.equal(
-    ruleIndex(orchestrator.permissions, "shell", "*", "deny") >= 0,
-    true,
-  );
-  assert.equal(
-    ruleIndex(orchestrator.permissions, "edit", "*", "deny") >= 0,
-    true,
-  );
-  assert.equal(
-    ruleIndex(orchestrator.permissions, "subagent", "implementer", "allow") >= 0,
-    true,
-  );
-  assert.equal(
-    ruleIndex(
-      orchestrator.permissions,
-      "subagent",
-      "security-reviewer",
-      "allow",
-    ) >= 0,
-    true,
-  );
-
-  for (const id of [
-    "planner",
-    "researcher",
-    "reviewer",
-    "security-reviewer",
-  ]) {
-    const agent = byId.get(id);
-    assert.equal(ruleIndex(agent.permissions, "edit", "*", "deny") >= 0, true);
-    assert.equal(ruleIndex(agent.permissions, "shell", "*", "deny") >= 0, true);
-  }
-
-  console.log("OpenCode v2 resolved agent permissions verified");
+  console.log("OpenCode v2 built-in agent policy verified");
 } else {
   throw new Error("Expected verification target: config or agents");
 }
