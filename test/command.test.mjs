@@ -47,3 +47,10 @@ test("ignores mentions that do not start the trimmed comment", () => {
 test("rejects unapproved models", () => {
   assert.throws(() => parseCommand("/oc model=other/paid do it", config), /Unsupported model/);
 });
+
+test("routes maintenance mode to the high-signal preferred model", () => {
+  const parsed = parseCommand("/oc maintenance remediate current blockers", config);
+  assert.equal(parsed.mode, "maintenance");
+  assert.equal(parsed.model, "opencode/nemotron-3-ultra-free");
+  assert.match(parsed.prompt, /remediate current blockers/);
+});
