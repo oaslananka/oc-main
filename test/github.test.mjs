@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, openPullRequestsApiPath, requiredChecksApiPaths } from "../src/github.mjs";
+import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, openPullRequestsApiPath, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -150,6 +150,30 @@ test("campaign control token can read base policy and update PR metadata", () =>
       permissions: {
         contents: "read",
         pull_requests: "write",
+      },
+    },
+  );
+});
+
+test("maintenance evidence token remains read-only", () => {
+  assert.deepEqual(MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS, {
+    administration: "read",
+    checks: "read",
+    contents: "read",
+    pull_requests: "read",
+  });
+  assert.deepEqual(
+    installationTokenRequestBody(
+      "owner/repo",
+      MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS,
+    ),
+    {
+      repositories: ["repo"],
+      permissions: {
+        administration: "read",
+        checks: "read",
+        contents: "read",
+        pull_requests: "read",
       },
     },
   );
