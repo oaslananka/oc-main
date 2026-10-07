@@ -21,7 +21,18 @@ if (!config.allowedModels.has(payload.model)) throw new Error("Worker payload mo
 await fs.rm(".oc-main-job", { recursive: true, force: true });
 await fs.mkdir(".oc-main-job", { recursive: true });
 
-const baseToken = await createRepositoryInstallationToken(config, payload.repository);
+const baseToken = await createRepositoryInstallationToken(
+  config,
+  payload.repository,
+  payload.mode === "maintenance"
+    ? {
+        administration: "read",
+        checks: "read",
+        contents: "read",
+        pull_requests: "read",
+      }
+    : { pull_requests: "read" },
+);
 const pr = await getPullRequest(payload.repository, payload.pull_number, baseToken);
 if (pr.state !== "open") throw new Error("Pull request is not open");
 if (!pr.head?.repo?.full_name || !pr.head?.ref || !pr.head?.sha) throw new Error("Pull request head repository is unavailable");
@@ -29,7 +40,11 @@ if (!pr.head?.repo?.full_name || !pr.head?.ref || !pr.head?.sha) throw new Error
 const headRepository = pr.head.repo.full_name;
 const headBranch = pr.head.ref;
 const expectedHead = pr.head.sha;
-const headToken = await createRepositoryInstallationToken(config, headRepository);
+const headToken = await createRepositoryInstallationToken(
+  config,
+  headRepository,
+  { contents: "read" },
+);
 const repositoryDir = path.resolve(".oc-main-job/repo");
 const { initialHead, remote } = await clonePullRequestHead({
   token: headToken, repository: headRepository, branch: headBranch, destination: repositoryDir,
