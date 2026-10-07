@@ -91,7 +91,7 @@ The status projection contains only trusted identity/count data:
 - recognized dependency-PR and proposed-lane counts;
 - worker run ID when finalization runs inside GitHub Actions.
 
-Provider messages, repository text, dependency-bot titles/labels, and model output are not copied into the sticky status. They remain evidence only.
+Provider messages, repository text, dependency-bot titles/labels, and model output are not copied into the sticky status. They remain evidence only. Prepared evidence is tied to its exact collected head. If finalization pushes a new commit, the status explicitly marks that pre-push evidence snapshot stale for the new expected head rather than implying current-head readiness.
 
 Human comments, lookalike users, and other bot comments are never selected for overwrite even if they copy the hidden marker. If more than one canonical bot status comment exists, the status update refuses to choose between them. Status writes are observability only: a create/update failure is logged but never changes signed campaign state, iteration authority, exact-head validation, or finalizer behavior.
 
