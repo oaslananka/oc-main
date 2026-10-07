@@ -324,7 +324,7 @@ export async function getRequiredStatusCheckNames(repository, branch, token) {
   }
 
   return {
-    names: [...names].sort(),
+    names: [...names].sort((a, b) => a.localeCompare(b)),
     sources,
     warnings,
   };
