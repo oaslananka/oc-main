@@ -11,6 +11,7 @@ function defaultPrompt(mode) {
     case "security": return "Perform a security review of this pull request and report concrete findings. Do not modify files.";
     case "test": return "Run the most relevant tests and diagnostics for this pull request. Do not intentionally modify tracked files.";
     case "explain": return "Explain the relevant implementation and behavior in this pull request without modifying files.";
+    case "maintenance": return "Use the prepared maintenance evidence to remediate current dependency, CI, security, and quality blockers without weakening repository gates.";
     default: return "Review this pull request. Report important findings and make only changes clearly required by the request context.";
   }
 }
