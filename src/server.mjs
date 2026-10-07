@@ -2,7 +2,12 @@ import http from "node:http";
 import { loadConfig } from "./config.mjs";
 import { parseCommand } from "./command.mjs";
 import { createSignedJob, wrapSignedJob } from "./dispatch.mjs";
-import { createOrReuseMaintenanceCampaign, dispatchRepositoryEvent } from "./github.mjs";
+import {
+  abortMaintenanceCampaignDispatch,
+  beginMaintenanceCampaignDispatch,
+  createOrReuseMaintenanceCampaign,
+  dispatchRepositoryEvent,
+} from "./github.mjs";
 import { extractIssueCommentTrigger, extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
 
 const config = loadConfig();
@@ -38,6 +43,13 @@ function respond(response, status, body = "") {
     "Cache-Control": "no-store",
   });
   response.end(body);
+}
+
+function campaignDispatchBody(reason) {
+  if (reason === "busy") return "campaign busy\n";
+  if (reason === "stale") return "campaign stale\n";
+  if (reason === "duplicate") return "duplicate\n";
+  return "campaign closed\n";
 }
 
 async function handleOcMainWebhook(rawBody, headers) {
@@ -80,6 +92,7 @@ async function handleOcMainWebhook(rawBody, headers) {
 
   let workerTrigger = trigger;
   let workerCommand = command;
+  let campaignDispatch = null;
   if (issueTrigger) {
     if (!issueTrigger.issueNumber || command.mode !== "maintenance") {
       rememberDelivery(deliveryId);
@@ -101,14 +114,49 @@ async function handleOcMainWebhook(rawBody, headers) {
       ...issueTrigger,
       pullNumber: campaign.pullRequest.number,
     };
+    campaignDispatch = await beginMaintenanceCampaignDispatch(config, {
+      repository: workerTrigger.repository,
+      pullNumber: workerTrigger.pullNumber,
+      commentId: workerTrigger.commentId,
+    });
+    if (!campaignDispatch.dispatch) {
+      rememberDelivery(deliveryId);
+      return {
+        status: 202,
+        body: campaignDispatchBody(campaignDispatch.reason),
+      };
+    }
     workerCommand = {
       ...command,
       prompt:
-        `Maintenance campaign originated from issue #${issueTrigger.issueNumber}. ` +
+        `Maintenance campaign originated from issue #${issueTrigger.issueNumber}; ` +
+        `trusted iteration ${campaignDispatch.iteration}/${campaignDispatch.maxIterations}. ` +
         command.prompt,
     };
   } else if (!pullTrigger?.pullNumber) {
     throw new Error("Webhook payload is missing pull request metadata");
+  } else if (command.mode === "maintenance") {
+    campaignDispatch = await beginMaintenanceCampaignDispatch(config, {
+      repository: pullTrigger.repository,
+      pullNumber: pullTrigger.pullNumber,
+      commentId: pullTrigger.commentId,
+    });
+    if (campaignDispatch.campaign && !campaignDispatch.dispatch) {
+      rememberDelivery(deliveryId);
+      return {
+        status: 202,
+        body: campaignDispatchBody(campaignDispatch.reason),
+      };
+    }
+    if (campaignDispatch.campaign) {
+      workerCommand = {
+        ...command,
+        prompt:
+          `Maintenance campaign originated from issue #${campaignDispatch.sourceIssue}; ` +
+          `trusted iteration ${campaignDispatch.iteration}/${campaignDispatch.maxIterations}. ` +
+          command.prompt,
+      };
+    }
   }
 
   const job = createSignedJob(
@@ -117,12 +165,29 @@ async function handleOcMainWebhook(rawBody, headers) {
     config.workerDispatchSecret,
   );
 
-  await dispatchRepositoryEvent(
-    config,
-    config.controlRepository,
-    config.dispatchEventType,
-    wrapSignedJob(job),
-  );
+  try {
+    await dispatchRepositoryEvent(
+      config,
+      config.controlRepository,
+      config.dispatchEventType,
+      wrapSignedJob(job),
+    );
+  } catch (error) {
+    if (campaignDispatch?.campaign && campaignDispatch.dispatch) {
+      try {
+        await abortMaintenanceCampaignDispatch(config, {
+          repository: workerTrigger.repository,
+          pullNumber: workerTrigger.pullNumber,
+          commentId: workerTrigger.commentId,
+          iteration: campaignDispatch.iteration,
+          expectedHead: campaignDispatch.expectedHead,
+        });
+      } catch (abortError) {
+        console.error("campaign dispatch rollback failed", abortError);
+      }
+    }
+    throw error;
+  }
 
   rememberDelivery(deliveryId);
   console.log(
