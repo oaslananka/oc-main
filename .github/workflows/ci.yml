@@ -66,11 +66,8 @@ jobs:
           mkdir -p "$HOME/.config"
           cp -R runtime/opencode "$HOME/.config/opencode"
           export OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
-          export OPENCODE_DISABLE_PROJECT_CONFIG=1
-          export OPENCODE_DISABLE_CLAUDE_CODE=1
+          export OPENCODE_CONFIG_PROJECT_DISABLE=1
           export OPENCODE_DISABLE_AUTOUPDATE=1
-          export OPENCODE_DISABLE_LSP_DOWNLOAD=1
-          export OPENCODE_DISABLE_EXTERNAL_SKILLS=1
           export OPENCODE_DB=:memory:
           opencode --version | grep -F "2.0.24"
           opencode debug config | node scripts/verify-opencode-v2.mjs config
