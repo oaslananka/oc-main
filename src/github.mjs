@@ -79,7 +79,23 @@ function positiveId(value, label) {
   return String(numeric);
 }
 
-async function request(pathname, { token, method = "GET", body } = {}) {
+function validatedApiPath(pathname) {
+  const value = String(pathname || "");
+  if (
+    !value.startsWith("/") ||
+    value.includes("\\") ||
+    value.includes("://") ||
+    /[\r\n]/.test(value)
+  ) {
+    throw new Error("Refusing invalid prevalidated GitHub API path");
+  }
+  return value;
+}
+
+async function request(
+  pathname,
+  { token, method = "GET", body, prevalidatedPath = false } = {},
+) {
   const payload = body ? JSON.stringify(body) : null;
   const headers = {
     Accept: "application/vnd.github+json",
@@ -100,7 +116,7 @@ async function request(pathname, { token, method = "GET", body } = {}) {
         protocol: "https:",
         hostname: API_HOSTNAME,
         port: 443,
-        path: apiPath(pathname),
+        path: prevalidatedPath ? validatedApiPath(pathname) : apiPath(pathname),
         method,
         headers,
         timeout: REQUEST_TIMEOUT_MS,
@@ -222,12 +238,37 @@ function commitSha(value) {
   return sha.toLowerCase();
 }
 
-function simpleBranchName(value) {
+function safeBranchName(value) {
   const branch = String(value || "").trim();
-  if (!/^[A-Za-z0-9_.-]{1,200}$/.test(branch)) {
+  const segments = branch.split("/");
+  if (
+    !/^[A-Za-z0-9._/-]{1,200}$/.test(branch) ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.includes("//") ||
+    branch.includes("..") ||
+    branch.includes("@{") ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment.endsWith(".lock"),
+    )
+  ) {
     throw new Error("Branch name is not supported for required-check discovery");
   }
   return branch;
+}
+
+export function requiredChecksApiPaths(repository, branch) {
+  const safeRepository = repositoryPath(repository);
+  const encodedBranch = encodeURIComponent(safeBranchName(branch));
+  return {
+    rules: `/repos/${safeRepository}/rules/branches/${encodedBranch}`,
+    protection:
+      `/repos/${safeRepository}/branches/${encodedBranch}/protection/required_status_checks`,
+  };
 }
 
 export async function listCheckRunsForCommit(repository, sha, token) {
@@ -281,16 +322,15 @@ function addRequiredChecksFromRules(names, rules) {
 }
 
 export async function getRequiredStatusCheckNames(repository, branch, token) {
-  const safeRepository = repositoryPath(repository);
-  const safeBranch = simpleBranchName(branch);
+  const paths = requiredChecksApiPaths(repository, branch);
   const names = new Set();
   const sources = [];
   const warnings = [];
 
   try {
     const rules = await request(
-      `repos/${safeRepository}/rules/branches/${encodeURIComponent(safeBranch)}`,
-      { token },
+      paths.rules,
+      { token, prevalidatedPath: true },
     );
     addRequiredChecksFromRules(names, rules);
     sources.push("repository-rules");
@@ -302,8 +342,8 @@ export async function getRequiredStatusCheckNames(repository, branch, token) {
 
   try {
     const protection = await request(
-      `repos/${safeRepository}/branches/${encodeURIComponent(safeBranch)}/protection/required_status_checks`,
-      { token },
+      paths.protection,
+      { token, prevalidatedPath: true },
     );
     for (const context of protection?.contexts || []) {
       const name = String(context || "").trim();
