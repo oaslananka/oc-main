@@ -48,8 +48,8 @@ const MODEL_PREFERENCES = {
   test: ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"],
 };
 
-const HIGH_RISK = /\\b(secret|credential|auth|oauth|oidc|permission|workflow|release|publish|deploy|migration|database|schema|infrastructure|infra|docker|security|token|signing|production)\\b/i;
-const MEDIUM_RISK = /\\b(ci|dependency|upgrade|refactor|package|build|config|configuration|api|network|cache|queue)\\b/i;
+const HIGH_RISK = /\b(secret|credential|auth|oauth|oidc|permission|workflow|release|publish|deploy|migration|database|schema|infrastructure|infra|docker|security|token|signing|production)\b/i;
+const MEDIUM_RISK = /\b(ci|dependency|upgrade|refactor|package|build|config|configuration|api|network|cache|queue)\b/i;
 
 export function isSupportedMode(value) {
   return SUPPORTED_MODES.has(String(value || "").toLowerCase());
