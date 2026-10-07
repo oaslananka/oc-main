@@ -25,6 +25,7 @@ test("trusted OpenCode v2 config is native and locked down", () => {
   assert.equal(config.update, "disable");
   assert.equal(config.lsp, false);
   assert.deepEqual(config.skills, ["~/.config/opencode/skills"]);
+  assert.deepEqual(config.instructions, ["~/.config/opencode/AGENTS.md"]);
 
   assert.equal(hasRule(config.permissions, "external_directory", "*", "deny"), true);
   assert.equal(hasRule(config.permissions, "question", "*", "deny"), true);
