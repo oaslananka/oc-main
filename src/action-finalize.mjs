@@ -2,11 +2,11 @@ import fs from "node:fs/promises";
 import { loadConfig } from "./config.mjs";
 import { createPullRequestComment, createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { commitChanges, hasChanges, pushHead } from "./git.mjs";
-import { actionWorkRoot, readResult, readVerifiedJob } from "./action-state.mjs";
+import { readResult, readVerifiedJob } from "./action-state.mjs";
 
 function truncate(text, limit = 5000) {
   const value = String(text || "");
-  return value.length <= limit ? value : value.slice(0, limit) + "\\n\\n[output truncated]";
+  return value.length <= limit ? value : value.slice(0, limit) + "\n\n[output truncated]";
 }
 
 function commitMessageForMode(mode) {
@@ -35,13 +35,13 @@ async function main() {
   const changed = await hasChanges(job.repositoryDir);
   if (!job.allowEdits && changed) {
     await createPullRequestComment(job.repository, job.pullNumber,
-      "Run blocked (" + runLabel(job) + "). The selected mode is read-only but the agent produced tracked-file changes, so nothing was pushed.\\n\\n" + truncate(result.output), baseToken);
+      "Run blocked (" + runLabel(job) + "). The selected mode is read-only but the agent produced tracked-file changes, so nothing was pushed.\n\n" + truncate(result.output), baseToken);
     return;
   }
 
   if (!changed) {
     await createPullRequestComment(job.repository, job.pullNumber,
-      "Completed (" + runLabel(job) + "). No repository changes were produced.\\n\\n" + truncate(result.output), baseToken);
+      "Completed (" + runLabel(job) + "). No repository changes were produced.\n\n" + truncate(result.output), baseToken);
     return;
   }
 
@@ -52,7 +52,7 @@ async function main() {
   const commitSha = await commitChanges(job.repositoryDir, commitMessageForMode(job.mode));
   await pushHead({ token: headToken, repositoryDir: job.repositoryDir, remote: job.remote, branch: job.headBranch });
   await createPullRequestComment(job.repository, job.pullNumber,
-    "Done (" + runLabel(job) + "). Pushed commit `" + commitSha.slice(0, 7) + "` to `" + job.headBranch + "`.\\n\\n" + truncate(result.output), baseToken);
+    "Done (" + runLabel(job) + "). Pushed commit `" + commitSha.slice(0, 7) + "` to `" + job.headBranch + "`.\n\n" + truncate(result.output), baseToken);
 }
 
-try { await main(); } finally { await fs.rm(actionWorkRoot(), { recursive: true, force: true }); }
+try { await main(); } finally { await fs.rm(".oc-main-job", { recursive: true, force: true }); }
