@@ -5,6 +5,7 @@ import {
   beginMaintenanceCampaignIteration as beginCampaignStateIteration,
   completeMaintenanceCampaignIteration as completeCampaignStateIteration,
   createInitialMaintenanceCampaignState,
+  isMaintenanceCampaignBranchName,
   readMaintenanceCampaignState,
   writeMaintenanceCampaignState,
 } from "./campaign-state.mjs";
@@ -549,7 +550,14 @@ function assertReusableMaintenanceCampaign(
 
 function campaignStateForPullRequest(pullRequest, secret) {
   const state = readMaintenanceCampaignState(pullRequest?.body, secret);
-  if (!state) return null;
+  if (!state) {
+    if (isMaintenanceCampaignBranchName(pullRequest?.head?.ref)) {
+      throw new Error(
+        "Maintenance campaign branch is missing trusted campaign state",
+      );
+    }
+    return null;
+  }
   if (state.campaign_pr !== Number(pullRequest?.number)) {
     throw new Error("Maintenance campaign pull request identity is invalid");
   }
