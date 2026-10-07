@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { loadConfig } from "./config.mjs";
 import {
   FINALIZER_COMMENT_TOKEN_PERMISSIONS,
@@ -143,4 +142,4 @@ async function main() {
     "Done (" + runLabel(job) + "). Pushed commit `" + commitSha.slice(0, 7) + "` to `" + job.headBranch + "`.\n\n" + truncate(result.output), baseToken);
 }
 
-try { await main(); } finally { await fs.rm(".oc-main-job", { recursive: true, force: true }); }
+await main();
