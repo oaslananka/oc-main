@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, requiredChecksApiPaths } from "../src/github.mjs";
+import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, openPullRequestsApiPath, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -152,5 +152,20 @@ test("campaign control token can read base policy and update PR metadata", () =>
         pull_requests: "write",
       },
     },
+  );
+});
+
+test("open PR discovery uses a bounded GitHub API path", () => {
+  assert.equal(
+    openPullRequestsApiPath("owner/repo", 2),
+    "/repos/owner/repo/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+  );
+  assert.throws(
+    () => openPullRequestsApiPath("owner/repo", 0),
+    /Invalid open pull request page/,
+  );
+  assert.throws(
+    () => openPullRequestsApiPath("owner/repo", 4),
+    /Invalid open pull request page/,
   );
 });
