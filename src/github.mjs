@@ -739,6 +739,34 @@ export function requiredChecksApiPaths(repository, branch) {
   };
 }
 
+export function openPullRequestsApiPath(repository, page = 1) {
+  const safeRepository = repositoryPath(repository);
+  const number = Number(page);
+  if (!Number.isSafeInteger(number) || number < 1 || number > 3) {
+    throw new Error("Invalid open pull request page");
+  }
+  return (
+    "/repos/" +
+    safeRepository +
+    "/pulls?state=open&sort=created&direction=asc&per_page=100&page=" +
+    number
+  );
+}
+
+export async function listOpenPullRequests(repository, token) {
+  const pulls = [];
+  for (let page = 1; page <= 3; page += 1) {
+    const result = await request(
+      openPullRequestsApiPath(repository, page),
+      { token, prevalidatedPath: true },
+    );
+    const rows = Array.isArray(result) ? result : [];
+    pulls.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return pulls.slice(0, 300);
+}
+
 export async function listCheckRunsForCommit(repository, sha, token) {
   const safeRepository = repositoryPath(repository);
   const safeSha = commitSha(sha);
