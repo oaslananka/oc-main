@@ -71,4 +71,14 @@ jobs:
           export OPENCODE_DB=:memory:
           opencode --version | grep -F "2.0.24"
           opencode debug config | node scripts/verify-opencode-v2.mjs config
-          opencode debug agents | node scripts/verify-opencode-v2.mjs agents
+
+          agents_verified=0
+          for attempt in 1 2 3 4 5 6; do
+            if opencode debug agents | node scripts/verify-opencode-v2.mjs agents; then
+              agents_verified=1
+              break
+            fi
+            echo "OpenCode agent registry not ready yet (attempt $attempt/6)"
+            sleep 2
+          done
+          test "$agents_verified" -eq 1
