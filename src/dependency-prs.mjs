@@ -8,6 +8,12 @@ const BOT_IDENTITIES = new Map([
   ["renovate[bot]", "renovate"],
 ]);
 
+const DEPENDENCY_COUNT_RE = /\bwith\s+(\d{1,3})\s+updates?\b/i;
+const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/i;
+const DEPENDABOT_GROUP_RE = /^Bump the (.+?) group\b/i;
+const DEPENDABOT_VERSION_RE = /^Bump (.+?) from (\S+) to (\S+)$/i;
+const DEPENDABOT_ECOSYSTEM_RE = /^dependabot\/([^/]+)\//i;
+
 const DEPENDABOT_ECOSYSTEMS = new Map([
   ["npm_and_yarn", "npm"],
   ["github_actions", "github-actions"],
@@ -50,14 +56,14 @@ function botKind(pull) {
 }
 
 function dependencyCountHint(title) {
-  const group = String(title || "").match(/\bwith\s+(\d+)\s+updates?\b/i);
+  const group = DEPENDENCY_COUNT_RE.exec(String(title || ""));
   if (!group) return 1;
   const count = Number(group[1]);
   return Number.isSafeInteger(count) && count > 0 && count <= 100 ? count : 1;
 }
 
 function semverParts(value) {
-  const match = String(value || "").match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
+  const match = SEMVER_RE.exec(String(value || ""));
   if (!match) return null;
   return match.slice(1, 4).map(Number);
 }
@@ -74,7 +80,7 @@ function scopeFromVersionPair(fromVersion, toVersion) {
 
 function dependabotTitleEvidence(title) {
   const text = String(title || "").trim();
-  const group = text.match(/^Bump the (.+?) group\b/i);
+  const group = DEPENDABOT_GROUP_RE.exec(text);
   if (group) {
     return {
       packageHint: bounded(group[1], 160),
@@ -83,7 +89,7 @@ function dependabotTitleEvidence(title) {
     };
   }
 
-  const version = text.match(/^Bump (.+?) from (\S+) to (\S+)$/i);
+  const version = DEPENDABOT_VERSION_RE.exec(text);
   if (version) {
     return {
       packageHint: bounded(version[1], 160),
@@ -99,11 +105,34 @@ function dependabotTitleEvidence(title) {
   };
 }
 
+function renovatePackageHint(text) {
+  const lower = text.toLowerCase();
+  const marker = "update ";
+  const updateIndex = lower.indexOf(marker);
+  if (updateIndex < 0) return "";
+
+  let subject = text.slice(updateIndex + marker.length);
+  let subjectLower = subject.toLowerCase();
+  for (const prefix of [
+    "dependency ",
+    "package ",
+    "docker image ",
+    "action ",
+    "image ",
+  ]) {
+    if (!subjectLower.startsWith(prefix)) continue;
+    subject = subject.slice(prefix.length);
+    subjectLower = subjectLower.slice(prefix.length);
+    break;
+  }
+
+  const toIndex = subjectLower.indexOf(" to ");
+  if (toIndex <= 0) return "";
+  return bounded(subject.slice(0, toIndex), 160);
+}
+
 function renovateTitleEvidence(title) {
   const text = String(title || "").trim();
-  const packageMatch = text.match(
-    /\bupdate\s+(?:dependency|package|action|docker image|image)?\s*([^,]+?)\s+to\s+\S+/i,
-  );
   const lower = text.toLowerCase();
   let updateScope = "unknown";
   if (/\bmajor\b/.test(lower)) updateScope = "major";
@@ -111,14 +140,14 @@ function renovateTitleEvidence(title) {
   else if (/\bpatch\b/.test(lower)) updateScope = "patch";
 
   return {
-    packageHint: packageMatch ? bounded(packageMatch[1], 160) : "",
+    packageHint: renovatePackageHint(text),
     updateScope,
     dependencyCountHint: 1,
   };
 }
 
 function dependabotEcosystem(headRef) {
-  const match = String(headRef || "").match(/^dependabot\/([^/]+)\//i);
+  const match = DEPENDABOT_ECOSYSTEM_RE.exec(String(headRef || ""));
   if (!match) return "unknown";
   return DEPENDABOT_ECOSYSTEMS.get(match[1].toLowerCase()) || match[1].toLowerCase();
 }
@@ -287,8 +316,8 @@ function normalizeRecognizedPulls(pulls, warnings) {
   const rows = Array.isArray(pulls) ? pulls : [];
   let truncated = false;
 
-  for (let index = 0; index < rows.length; index += 1) {
-    const pr = normalizedPull(rows[index], warnings);
+  for (const pull of rows) {
+    const pr = normalizedPull(pull, warnings);
     if (!pr) continue;
     if (normalized.length >= MAX_DEPENDENCY_PRS) {
       truncated = true;
