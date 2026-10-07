@@ -237,6 +237,12 @@ function routeKey(trigger, issueTrigger = null) {
   return trigger.repository + "#pr-" + trigger.pullNumber;
 }
 
+function maintenanceRouteKey(repository) {
+  const value = String(repository || "");
+  if (!value) throw new Error("Maintenance route repository is missing");
+  return value + "#maintenance";
+}
+
 async function handleAutomaticStatusWakeup(trigger) {
   const result = await evaluateAutomaticMaintenanceWakeup({
     config,
@@ -267,7 +273,7 @@ async function handleOcMainWebhook(rawBody, headers) {
       throw new Error("Campaign status webhook is missing repository or PR metadata");
     }
     const result = await routeSerial.run(
-      routeKey(statusTrigger),
+      maintenanceRouteKey(statusTrigger.repository),
       () => handleAutomaticStatusWakeup(statusTrigger),
     );
     return rememberedResponse(deliveryId, result);
@@ -303,8 +309,12 @@ async function handleOcMainWebhook(rawBody, headers) {
     );
   }
 
+  const serialKey =
+    command.mode === "maintenance"
+      ? maintenanceRouteKey(trigger.repository)
+      : routeKey(trigger, issueTrigger);
   const result = await routeSerial.run(
-    routeKey(trigger, issueTrigger),
+    serialKey,
     async () => {
       const route = await workerRoute(pullTrigger, issueTrigger, command);
       if (route.response) return route.response;
