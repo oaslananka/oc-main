@@ -80,11 +80,7 @@ function scalar(raw, lineNumber) {
     (value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'"))
   ) {
-    const body = value.slice(1, -1);
-    if (body.includes("\n") || body.includes("\r")) {
-      throw new Error("Multiline policy values are not supported");
-    }
-    return body;
+    return value.slice(1, -1);
   }
   if (value === "true") return true;
   if (value === "false") return false;
@@ -103,10 +99,14 @@ function keyValue(trimmed, lineNumber) {
 }
 
 function checkedInteger(value, name, minimum, maximum) {
-  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+  const numeric =
+    typeof value === "string" && /^-?\\d+$/.test(value)
+      ? Number.parseInt(value, 10)
+      : value;
+  if (!Number.isSafeInteger(numeric) || numeric < minimum || numeric > maximum) {
     throw new Error(name + " must be an integer between " + minimum + " and " + maximum);
   }
-  return value;
+  return numeric;
 }
 
 function checkedStringList(values, name, { maxItems = 50, severities = false } = {}) {
@@ -134,14 +134,30 @@ function createParsedPolicy() {
   };
 }
 
+function stripInlineComment(raw) {
+  let quote = "";
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? "" : char;
+      continue;
+    }
+    if (char === "#" && !quote && (index === 0 || /\\s/.test(raw[index - 1]))) {
+      return raw.slice(0, index).trimEnd();
+    }
+  }
+  return raw;
+}
+
 function parseLineShape(raw, lineNumber) {
-  if (!raw.trim() || raw.trimStart().startsWith("#")) return null;
-  if (raw.includes("\t")) throw new Error("Tabs are not supported in maintenance policy");
-  const indent = raw.length - raw.trimStart().length;
+  const uncommented = stripInlineComment(raw);
+  if (!uncommented.trim()) return null;
+  if (uncommented.includes("\t")) throw new Error("Tabs are not supported in maintenance policy");
+  const indent = uncommented.length - uncommented.trimStart().length;
   if (indent % 2 !== 0 || indent > 6) {
     throw new Error("Maintenance policy indentation must use two spaces on line " + lineNumber);
   }
-  return { indent, trimmed: raw.trim() };
+  return { indent, trimmed: uncommented.trim() };
 }
 
 function handleListItem(state, trimmed, lineNumber) {
@@ -311,9 +327,7 @@ function applyAnalyzerPolicies(policy, parsed) {
 }
 
 function validateParsedPolicy(parsed) {
-  if (parsed.version !== 1) {
-    throw new Error("Maintenance policy version must be 1");
-  }
+  checkedInteger(parsed.version, "version", 1, 1);
   const policy = cloneDefaults();
   applyCampaignPolicy(policy, parsed);
   applyRequiredChecksPolicy(policy, parsed);
