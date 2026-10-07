@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   assertActiveMaintenanceCampaignJob,
+  isMaintenanceCampaignBranchName,
   readMaintenanceCampaignState,
 } from "./campaign-state.mjs";
 import { loadConfig } from "./config.mjs";
@@ -49,6 +50,9 @@ const campaignState = readMaintenanceCampaignState(
   config.workerDispatchSecret,
 );
 let campaignIteration = null;
+if (!campaignState && isMaintenanceCampaignBranchName(headBranch)) {
+  throw new Error("Maintenance campaign branch is missing trusted campaign state");
+}
 if (campaignState) {
   if (payload.mode !== "maintenance") {
     throw new Error("Maintenance campaign pull requests accept maintenance mode only");
