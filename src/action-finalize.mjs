@@ -27,6 +27,17 @@ async function main() {
   const result = await readResult();
   const baseToken = await createRepositoryInstallationToken(config, job.repository);
 
+  if (result.runStatus === "incomplete") {
+    await createPullRequestComment(
+      job.repository,
+      job.pullNumber,
+      "Run incomplete (" + runLabel(job) + "). No commit was pushed.\n\n" +
+        truncate(result.output || result.error || "The requested change was not completed."),
+      baseToken,
+    );
+    return;
+  }
+
   if (result.runStatus !== "success") {
     await createPullRequestComment(job.repository, job.pullNumber,
       "Run failed (" + runLabel(job) + "): " + truncate(result.error || "OpenCode failed"), baseToken);
