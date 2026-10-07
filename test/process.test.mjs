@@ -12,3 +12,23 @@ test("runProcess preserves UTF-8 characters split across stream chunks", async (
   const result = await runProcess(process.execPath, ["-e", script]);
   assert.equal(result.stdout, "😀");
 });
+
+
+test("runProcess reports the tail of long failures", async () => {
+  await assert.rejects(
+    runProcess(
+      process.execPath,
+      [
+        "-e",
+        "process.stderr.write('x'.repeat(14000) + 'TAIL_MARKER'); process.exit(7)",
+      ],
+      { maxOutputBytes: 100_000 },
+    ),
+    (error) => {
+      assert.match(error.message, /exit code 7/);
+      assert.match(error.message, /TAIL_MARKER/);
+      assert.doesNotMatch(error.message, /^x{1000}/);
+      return true;
+    },
+  );
+});

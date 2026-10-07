@@ -31,10 +31,10 @@ test("trusted OpenCode v2 config is native and locked down", () => {
   assert.equal(hasRule(config.permissions, "question", "*", "deny"), true);
   assert.equal(hasRule(config.permissions, "skill", "*", "deny"), true);
   assert.equal(hasRule(config.permissions, "skill", "oc-*", "allow"), true);
-  assert.equal(hasRule(config.permissions, "task", "*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "bash", "*git push*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "bash", "*git commit*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "bash", "*git remote*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "subagent", "*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "shell", "*git push*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "shell", "*git commit*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "shell", "*git remote*", "deny"), true);
 
   assert.equal(config.agents.build.disabled, true);
   assert.equal(config.agents.plan.disabled, true);
@@ -78,17 +78,17 @@ test("trusted agent pack is defined directly in native v2 config", () => {
     true,
   );
   assert.equal(
-    hasRule(config.agents.orchestrator.permissions, "bash", "*", "deny"),
+    hasRule(config.agents.orchestrator.permissions, "shell", "*", "deny"),
     true,
   );
   assert.equal(
-    hasRule(config.agents.orchestrator.permissions, "task", "implementer", "allow"),
+    hasRule(config.agents.orchestrator.permissions, "subagent", "implementer", "allow"),
     true,
   );
   assert.equal(
     hasRule(
       config.agents.orchestrator.permissions,
-      "task",
+      "subagent",
       "security-reviewer",
       "allow",
     ),
@@ -97,15 +97,15 @@ test("trusted agent pack is defined directly in native v2 config", () => {
 
   for (const id of ["planner", "researcher", "reviewer", "security-reviewer"]) {
     assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "deny"), true);
-    assert.equal(hasRule(config.agents[id].permissions, "bash", "*", "deny"), true);
+    assert.equal(hasRule(config.agents[id].permissions, "shell", "*", "deny"), true);
   }
 
   for (const id of ["implementer", "ci-debugger", "release-engineer"]) {
     assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "allow"), true);
     assert.equal(
-      config.agents[id].permissions.some((rule) => rule.action === "bash"),
+      config.agents[id].permissions.some((rule) => rule.action === "shell"),
       false,
-      id + " must inherit the global bash deny rules without overriding them",
+      id + " must inherit the global shell deny rules without overriding them",
     );
   }
 });

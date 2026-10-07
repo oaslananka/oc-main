@@ -23,20 +23,20 @@ function assertGitTransportDenied(agent) {
     "*git commit*",
     "*git remote*",
   ]) {
-    const deny = ruleIndex(rules, "bash", resource, "deny");
-    assert.ok(deny >= 0, agent.id + " is missing bash deny for " + resource);
+    const deny = ruleIndex(rules, "shell", resource, "deny");
+    assert.ok(deny >= 0, agent.id + " is missing shell deny for " + resource);
     const laterBroadAllow = rules
       .slice(deny + 1)
       .some(
         (rule) =>
-          rule.action === "bash" &&
+          rule.action === "shell" &&
           rule.resource === "*" &&
           rule.effect === "allow",
       );
     assert.equal(
       laterBroadAllow,
       false,
-      agent.id + " overrides a Git transport deny with a later broad allow",
+      agent.id + " overrides a Git transport deny with a later broad shell allow",
     );
   }
 }
@@ -109,7 +109,7 @@ if (target === "config") {
 
   const orchestrator = byId.get("orchestrator");
   assert.equal(
-    ruleIndex(orchestrator.permissions, "bash", "*", "deny") >= 0,
+    ruleIndex(orchestrator.permissions, "shell", "*", "deny") >= 0,
     true,
   );
   assert.equal(
@@ -117,13 +117,13 @@ if (target === "config") {
     true,
   );
   assert.equal(
-    ruleIndex(orchestrator.permissions, "task", "implementer", "allow") >= 0,
+    ruleIndex(orchestrator.permissions, "subagent", "implementer", "allow") >= 0,
     true,
   );
   assert.equal(
     ruleIndex(
       orchestrator.permissions,
-      "task",
+      "subagent",
       "security-reviewer",
       "allow",
     ) >= 0,
@@ -138,7 +138,7 @@ if (target === "config") {
   ]) {
     const agent = byId.get(id);
     assert.equal(ruleIndex(agent.permissions, "edit", "*", "deny") >= 0, true);
-    assert.equal(ruleIndex(agent.permissions, "bash", "*", "deny") >= 0, true);
+    assert.equal(ruleIndex(agent.permissions, "shell", "*", "deny") >= 0, true);
   }
 
   console.log("OpenCode v2 resolved agent permissions verified");

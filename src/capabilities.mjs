@@ -44,8 +44,8 @@ const MODEL_PREFERENCES = new Map([
   ["release", ["opencode/nemotron-3-ultra-free", "opencode/nemotron-3.5-lightning-free"]],
   ["research", ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"]],
   ["explain", ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"]],
-  ["ci", ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"]],
-  ["test", ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"]],
+  ["ci", ["opencode/nemotron-3.5-lightning-free", "opencode/mimo-v2.6-flash-free"]],
+  ["test", ["opencode/nemotron-3.5-lightning-free", "opencode/mimo-v2.6-flash-free"]],
 ]);
 
 const HIGH_RISK = /\b(secret|credential|auth|oauth|oidc|permission|workflow|release|publish|deploy|migration|database|schema|infrastructure|infra|docker|security|token|signing|production)\b/i;
@@ -79,8 +79,8 @@ export function capabilityProfile(mode, prompt = "") {
 
   const allowEdits = !READ_ONLY_MODES.has(normalizedMode);
   const capabilities = ["read", "glob", "grep", "list", "skills", "webfetch", "websearch"];
-  if (allowEdits) capabilities.push("edit", "bash", "task");
-  if (normalizedMode === "test") capabilities.push("bash");
+  if (allowEdits) capabilities.push("edit", "shell", "subagent");
+  if (normalizedMode === "test") capabilities.push("shell");
 
   return {
     mode: normalizedMode,

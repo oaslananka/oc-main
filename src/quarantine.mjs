@@ -88,6 +88,28 @@ async function movePath(source, destination) {
   await runProcess("mv", ["--", source, destination], { timeoutMs: 60_000 });
 }
 
+async function trackedFiles(repositoryDir, candidates) {
+  if (candidates.length === 0) return [];
+  const result = await runProcess(
+    "git",
+    ["ls-files", "-z", "--", ...candidates],
+    { cwd: repositoryDir, timeoutMs: 60_000, maxOutputBytes: 4_000_000 },
+  );
+  return [...new Set(result.stdout.split("\0").filter(Boolean))];
+}
+
+async function setSkipWorktree(repositoryDir, files, enabled) {
+  const flag = enabled ? "--skip-worktree" : "--no-skip-worktree";
+  for (let index = 0; index < files.length; index += 200) {
+    const chunk = files.slice(index, index + 200);
+    await runProcess(
+      "git",
+      ["update-index", flag, "--", ...chunk],
+      { cwd: repositoryDir, timeoutMs: 60_000, maxOutputBytes: 1_000_000 },
+    );
+  }
+}
+
 export async function quarantineProjectControls(repositoryDir, quarantineDir) {
   const repositoryRoot = path.resolve(repositoryDir);
   const quarantineRoot = path.resolve(quarantineDir);
@@ -98,41 +120,61 @@ export async function quarantineProjectControls(repositoryDir, quarantineDir) {
     throw new Error("Quarantine directory must be outside the repository");
   }
 
-  const candidates = collapseCandidates(
+  const entries = collapseCandidates(
     (await listGitPaths(repositoryRoot))
       .map(controlCandidate)
       .filter(Boolean),
   );
+  const tracked = await trackedFiles(repositoryRoot, entries);
 
   await removeTree(quarantineRoot);
   await makeDirectory(quarantineRoot);
+  await setSkipWorktree(repositoryRoot, tracked, true);
 
-  for (const relative of candidates) {
-    await movePath(
-      inside(repositoryRoot, relative),
-      inside(quarantineRoot, relative),
-    );
+  const moved = [];
+  try {
+    for (const relative of entries) {
+      await movePath(
+        inside(repositoryRoot, relative),
+        inside(quarantineRoot, relative),
+      );
+      moved.push(relative);
+    }
+  } catch (error) {
+    for (const relative of moved.reverse()) {
+      await movePath(
+        inside(quarantineRoot, relative),
+        inside(repositoryRoot, relative),
+      );
+    }
+    await setSkipWorktree(repositoryRoot, tracked, false);
+    throw error;
   }
 
-  return candidates;
+  return { entries, tracked };
 }
 
 export async function restoreProjectControls(
   repositoryDir,
   quarantineDir,
-  entries,
+  state,
 ) {
   const repositoryRoot = path.resolve(repositoryDir);
   const quarantineRoot = path.resolve(quarantineDir);
+  const entries = state?.entries || [];
+  const tracked = state?.tracked || [];
 
-  for (const relative of [...entries].reverse()) {
-    const source = inside(quarantineRoot, relative);
-    const destination = inside(repositoryRoot, relative);
-    await removeTree(destination);
-    await movePath(source, destination);
+  try {
+    for (const relative of [...entries].reverse()) {
+      const source = inside(quarantineRoot, relative);
+      const destination = inside(repositoryRoot, relative);
+      await removeTree(destination);
+      await movePath(source, destination);
+    }
+  } finally {
+    await setSkipWorktree(repositoryRoot, tracked, false);
+    await removeTree(quarantineRoot);
   }
-
-  await removeTree(quarantineRoot);
 }
 
 export const quarantinedControlNames = {
