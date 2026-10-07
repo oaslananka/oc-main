@@ -39,7 +39,7 @@ function exactHead(value, label) {
 
 function observationLease(state) {
   if (!state || typeof state !== "object" || Array.isArray(state)) {
-    throw new Error("Campaign observer state is missing");
+    throw new TypeError("Campaign observer state is missing");
   }
   return {
     pull: positiveInteger(state.campaign_pr, "campaign pull request"),
