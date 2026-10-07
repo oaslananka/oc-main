@@ -1,6 +1,7 @@
 import {
   MAINTENANCE_CAMPAIGN_STATUS_BOT_LOGIN,
   MAINTENANCE_CAMPAIGN_STATUS_MARKER,
+  readMaintenanceCampaignWakeup,
 } from "./campaign-status.mjs";
 import crypto from "node:crypto";
 
@@ -87,6 +88,15 @@ export function extractCampaignStatusTrigger(eventName, payload) {
   ) {
     return null;
   }
+
+  let wakeup;
+  try {
+    wakeup = readMaintenanceCampaignWakeup(comment?.body);
+  } catch {
+    return null;
+  }
+  if (!wakeup) return null;
+
   return {
     repository: payload.repository?.full_name,
     pullNumber: payload.issue?.number,
@@ -94,5 +104,7 @@ export function extractCampaignStatusTrigger(eventName, payload) {
     commentId: comment?.id,
     commentUserId: comment?.user?.id,
     commentUserLogin: comment?.user?.login,
+    expectedIteration: wakeup.iteration,
+    expectedHead: wakeup.expectedHead,
   };
 }
