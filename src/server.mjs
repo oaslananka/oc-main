@@ -93,6 +93,10 @@ async function handleOcMainWebhook(rawBody, headers) {
     if (!campaign.pullRequest?.number) {
       throw new Error("Maintenance campaign pull request is unavailable");
     }
+    if (campaign.terminal || campaign.pullRequest.state !== "open") {
+      rememberDelivery(deliveryId);
+      return { status: 202, body: "campaign closed\n" };
+    }
     workerTrigger = {
       ...issueTrigger,
       pullNumber: campaign.pullRequest.number,
