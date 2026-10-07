@@ -14,10 +14,7 @@ export function buildOpenCodeEnvironment(home) {
     OPENCODE_CONFIG_DIR: path.join(home, ".config", "opencode"),
     OPENCODE_DB: ":memory:",
     OPENCODE_DISABLE_AUTOUPDATE: "1",
-    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-    OPENCODE_DISABLE_CLAUDE_CODE: "1",
-    OPENCODE_DISABLE_LSP_DOWNLOAD: "1",
-    OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+    OPENCODE_CONFIG_PROJECT_DISABLE: "1",
   };
 }
 
