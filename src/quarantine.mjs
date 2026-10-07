@@ -16,11 +16,12 @@ async function walk(root, current = root, found = []) {
     const absolute = path.join(current, entry.name);
     const relative = path.relative(root, absolute);
 
-    if (entry.isDirectory() && CONTROL_DIRECTORIES.has(entry.name)) {
-      found.push(relative);
-      continue;
-    }
-    if (CONTROL_FILES.has(entry.name)) {
+    if (entry.name === ".git") continue;
+
+    if (
+      CONTROL_DIRECTORIES.has(entry.name) ||
+      CONTROL_FILES.has(entry.name)
+    ) {
       found.push(relative);
       continue;
     }
