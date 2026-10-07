@@ -117,7 +117,9 @@ Before pushing, the trusted finalizer requires the PR head SHA to equal the prep
 
 ## MCP
 
-Context7 is scaffolded but disabled in the trusted runtime. Enabling any MCP requires a deliberate least-privilege credential and permission review. Never expose control-plane write credentials to an MCP running inside OpenCode.
+The trusted OpenCode v2 runtime enables the hosted Context7 MCP at `https://mcp.context7.com/mcp` using anonymous access with OAuth auto-discovery disabled. No Context7 API key or control-plane credential is injected into OpenCode. The connection starts asynchronously, so an immediate status query may briefly show no registered server before it reaches `connected`.
+
+Context7 is a research-only external dependency and is not a required CI availability gate. Never expose GitHub App, Doppler, deployment, or other control-plane write credentials to an MCP running inside OpenCode. Any additional MCP requires an explicit least-privilege permission and credential review.
 
 ## Current limitations
 
