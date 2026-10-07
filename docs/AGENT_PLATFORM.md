@@ -73,7 +73,7 @@ Maintenance now has a bounded trusted initializer for ordinary issues: only an a
 - `subagent=*` is denied.
 - Shell is available for repository work, while Git push/commit/remote/config and external GitHub/SSH transport commands are denied.
 - OpenCode has no control-plane write credentials.
-- Trusted GitHub App installation tokens are down-scoped per repository and stage: controller dispatch uses contents write on the control repository; issue maintenance bootstrap uses contents/issues/pull-requests write on only the target repository; prepare uses pull-request read plus maintenance-only checks/contents/administration read when needed; head clone uses contents read; finalize uses pull-request read/issues write for result comments and a separate contents/workflows write token for the authorized head push.
+- Trusted GitHub App installation tokens are down-scoped per repository and stage: controller dispatch uses contents write on the control repository; issue maintenance bootstrap uses contents/issues/pull-requests write on only the target repository; prepare uses pull-request read plus maintenance-only checks/contents/administration read when needed; head clone uses contents read; finalize uses pull-requests write for PR conversation result comments and a separate contents/workflows write token for the authorized head push.
 - Finalization re-checks the PR head before non-force push.
 - High-risk mode prompts require an explicit self/security review.
 
