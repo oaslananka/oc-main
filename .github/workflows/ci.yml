@@ -72,7 +72,7 @@ jobs:
           export OPENCODE_DISABLE_EXTERNAL_SKILLS=1
           export OPENCODE_DB=:memory:
           opencode --version | grep -F "2.0.24"
-          opencode --standalone debug config > "$RUNNER_TEMP/opencode-config.json"
+          opencode debug config > "$RUNNER_TEMP/opencode-config.json"
           grep -F '"orchestrator"' "$RUNNER_TEMP/opencode-config.json"
-          opencode --standalone debug agents | grep -F orchestrator
-          opencode --standalone debug agents | grep -F security-reviewer
+          opencode debug agents | grep -F orchestrator
+          opencode debug agents | grep -F security-reviewer
