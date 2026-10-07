@@ -110,6 +110,7 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 - OpenCode receives no Doppler/GitHub App/installation/webhook credential;
 - external-directory access, unattended questions, subagents, Git push/commit/remote/config, `gh`, SSH/SCP/rsync are denied by native v2 policy;
 - read-only modes cannot be pushed by the trusted finalizer;
+- finalizer PR conversation comments use a target-repository token scoped to `pull_requests:write`; GitHub rejected the narrower `issues:write + pull_requests:read` profile for PR comments during production canary validation;
 - finalizer requires the PR head SHA to equal the prepared snapshot and never force-pushes;
 - bot commits use the `oaslananka-ops[bot]` identity.
 
