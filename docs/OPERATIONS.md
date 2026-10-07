@@ -6,51 +6,48 @@
 
 ### VPS control plane
 
-The Ubuntu VPS runs only the Node.js webhook/controller container plus Doppler CLI inside that image. OpenCode is not installed or executed by the VPS service, target repositories are not cloned there, and the controller has no Docker socket.
+The Ubuntu VPS runs only the webhook/controller container plus Doppler CLI inside that image. OpenCode is not executed on the VPS, target repositories are not cloned there, and the controller has no Docker socket.
 
-HTTPS is terminated by the existing shared Caddy edge. Stable public GitHub App webhook:
+Stable GitHub App webhook:
 
     https://webhook.oaslananka.dev/github
 
-The logical oc-main consumer is `/github/oc-main`.
+Logical consumer:
+
+    /github/oc-main
 
 ### GitHub Actions worker plane
 
-An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, and dispatched to `oaslananka/oc-main` using `repository_dispatch` event `oc-run`.
+An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, wrapped as `client_payload.job`, and dispatched to `oaslananka/oc-main` with repository-dispatch event `oc-run`.
 
-The worker runs on GitHub-hosted Ubuntu and installs the real OpenCode CLI directly. Production runtime pin is OpenCode v2 `2.0.24`; the OpenCode GitHub Action is not used.
+The worker runs on GitHub-hosted Ubuntu and installs the real OpenCode CLI directly. Production pin is OpenCode v2 `2.0.24`; the OpenCode GitHub Action is not used.
 
-Prepare/finalize stages may use Doppler and short-lived GitHub App installation tokens. The OpenCode execution process receives none of those credentials.
+Prepare/finalize stages may use Doppler and short-lived GitHub App installation tokens. The OpenCode process receives none of those credentials.
 
 ## Command surface
 
-Accepted prefixes: `/oc` and `/opencode`.
+Accepted prefixes: `/oc`, `/opencode`.
 
 Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, `ci`.
 
-`plan`, `research`, `review`, `security`, `test`, and `explain` are read-only. The trusted finalizer refuses to push tracked changes from these modes.
+Read-only modes: `plan`, `research`, `review`, `security`, `test`, `explain`.
 
-`model=<allowed-id>` pins an allowlisted model. `model=auto` or no model uses mode routing constrained by Doppler `ALLOWED_MODELS`.
+Edit-capable modes: `auto`, `fix`, `apply`, `release`, `refactor`, `ci`.
 
-## OpenCode v2 runtime isolation
+Free-tier execution uses built-in `plan` for read-only modes and built-in `build` for edit-capable modes. Specialized behavior comes from the signed mode prompt and trusted `oc-*` skills. Custom agents/subagents are disabled because current OpenCode Console free-tier rejects them.
 
-The worker copies only `runtime/opencode/` into an isolated HOME and runs with:
+## OpenCode runtime isolation
 
-- `OPENCODE_CONFIG_PROJECT_DISABLE=1` using the canonical v2 project-discovery switch;
+The worker copies only `runtime/opencode/` into an isolated HOME and uses:
+
+- `OPENCODE_CONFIG_PROJECT_DISABLE=1`;
 - `OPENCODE_DISABLE_AUTOUPDATE=1`;
 - `OPENCODE_DB=:memory:`;
-- `OPENCODE_CONFIG_DIR` pinned to the isolated trusted HOME config directory.
+- `OPENCODE_CONFIG_DIR` pinned to the isolated trusted config root.
 
-Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Their control files are quarantined while OpenCode executes, and project discovery is disabled at the v2 server layer. Trusted agents are defined directly in `opencode.json`; trusted skills and `AGENTS.md` are explicitly registered from the isolated config root. LSP is disabled in the trusted runtime config.
+Target `.opencode`, `.claude`, `.agents`, `opencode.json(c)`, `AGENTS.md`, `CLAUDE.md`, and related control surfaces are quarantined during execution. Tracked quarantined paths use temporary Git `skip-worktree` bits so the model does not see false deletions; original files and index flags are restored afterward.
 
-## GitHub App event handling
-
-`oc-main` acts only on:
-
-- `issue_comment` action `created` when the issue is a pull request;
-- `pull_request_review_comment` action `created`.
-
-Other App events are ignored by this consumer. The shared App may keep unrelated permissions and subscriptions.
+The trusted runtime does not define custom OpenCode agents. Built-in `plan`/`build`, trusted instructions, trusted skills, global native v2 permissions, and the signed mode prompt form the runtime authority.
 
 ## Doppler configuration
 
@@ -82,7 +79,7 @@ Do not place secret values in documentation or Context Ledger.
 
 GitHub repository secrets: `DOPPLER_TOKEN` only.
 
-VPS bootstrap file: `/etc/oc-main/runtime-bootstrap` containing a read-only Doppler service token scoped to `oc-main/main`.
+VPS bootstrap file: `/etc/oc-main/runtime-bootstrap`, containing a read-only Doppler service token scoped to `oc-main/main`.
 
 ## VPS deployment
 
@@ -104,21 +101,23 @@ Logs:
 
     sudo ./scripts/compose.sh logs -f controller
 
-The existing shared Caddy config is `/opt/oaslananka-agent/current/infra/compose/Caddyfile`; do not launch a competing Caddy on ports 80/443.
+Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfile`; do not launch a competing Caddy on 80/443.
 
 ## GitHub Actions security boundary
 
-The control repository checkout uses `persist-credentials: false`. OpenCode receives no Doppler token, GitHub App private key, webhook secret, installation token, or persisted GitHub checkout credential.
-
-Before pushing, the trusted finalizer requires the PR head SHA to equal the prepared snapshot. Pushes are never forced. Commits produced by the finalizer use the `oaslananka-ops[bot]` identity.
+- control checkout uses `persist-credentials: false`;
+- OpenCode receives no Doppler/GitHub App/installation/webhook credential;
+- external-directory access, unattended questions, subagents, Git push/commit/remote/config, `gh`, SSH/SCP/rsync are denied by native v2 policy;
+- read-only modes cannot be pushed by the trusted finalizer;
+- finalizer requires the PR head SHA to equal the prepared snapshot and never force-pushes;
+- bot commits use the `oaslananka-ops[bot]` identity.
 
 ## MCP
 
-The trusted OpenCode v2 runtime enables the hosted Context7 MCP at `https://mcp.context7.com/mcp` using anonymous access with OAuth auto-discovery disabled. No Context7 API key or control-plane credential is injected into OpenCode. The connection starts asynchronously, so an immediate status query may briefly show no registered server before it reaches `connected`.
-
-Context7 is a research-only external dependency and is not a required CI availability gate. Never expose GitHub App, Doppler, deployment, or other control-plane write credentials to an MCP running inside OpenCode. Any additional MCP requires an explicit least-privilege permission and credential review.
+Context7 is enabled at `https://mcp.context7.com/mcp` using anonymous access with OAuth auto-discovery disabled. It is research-only and not a required CI availability gate. Never expose control-plane write credentials to an MCP inside OpenCode.
 
 ## Current limitations
 
-- Webhook delivery de-duplication remains in-memory on the VPS controller.
-- The shared `/github` routing implementation is currently co-located with the oc-main controller while oc-main is the sole consumer; shared multi-consumer extraction is tracked separately in Context Ledger.
+- OpenCode Console free-tier currently rejects custom primary agents/custom subagent sessions; production uses built-in `build`/`plan` until upstream fixes and E2E validation permit re-enabling richer custom agents.
+- Webhook delivery de-duplication is in-memory on the VPS controller.
+- Shared `/github` routing is still co-located with oc-main while it is the sole webhook consumer.
