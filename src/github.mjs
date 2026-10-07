@@ -51,7 +51,7 @@ export function apiPath(pathname) {
   return `/${relative}`;
 }
 
-function repositoryPath(repository) {
+function repositoryParts(repository) {
   const parts = String(repository).split("/");
   if (parts.length !== 2) {
     throw new Error("Invalid GitHub repository full name");
@@ -67,8 +67,47 @@ function repositoryPath(repository) {
       throw new Error("Invalid GitHub repository full name");
     }
   }
+  return parts;
+}
 
-  return parts.map(encodeURIComponent).join("/");
+function repositoryPath(repository) {
+  return repositoryParts(repository).map(encodeURIComponent).join("/");
+}
+
+const TOKEN_PERMISSION_LEVELS = new Map([
+  ["administration", new Set(["read"])],
+  ["checks", new Set(["read"])],
+  ["contents", new Set(["read", "write"])],
+  ["issues", new Set(["write"])],
+  ["pull_requests", new Set(["read"])],
+  ["workflows", new Set(["write"])],
+]);
+
+export function installationTokenRequestBody(repository, permissions) {
+  const [, name] = repositoryParts(repository);
+  const entries = Object.entries(permissions || {});
+  if (!entries.length) {
+    throw new Error("Scoped GitHub installation token requires explicit permissions");
+  }
+
+  const normalized = {};
+  for (const [permission, level] of entries) {
+    const allowed = TOKEN_PERMISSION_LEVELS.get(permission);
+    if (!allowed || !allowed.has(level)) {
+      throw new Error(
+        "Unsupported GitHub installation token permission: " +
+          permission +
+          "=" +
+          level,
+      );
+    }
+    normalized[permission] = level;
+  }
+
+  return {
+    repositories: [name],
+    permissions: normalized,
+  };
 }
 
 function positiveId(value, label) {
@@ -172,7 +211,11 @@ async function request(
   });
 }
 
-export async function createInstallationToken(config, installationId) {
+export async function createInstallationToken(
+  config,
+  installationId,
+  requestBody,
+) {
   const safeInstallationId = positiveId(installationId, "installation ID");
   const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
   const result = await request(
@@ -180,18 +223,28 @@ export async function createInstallationToken(config, installationId) {
     {
       token: jwt,
       method: "POST",
+      body: requestBody,
     },
   );
+  if (!result?.token) throw new Error("GitHub installation token response is missing a token");
   return result.token;
 }
 
-export async function createRepositoryInstallationToken(config, repository) {
+export async function createRepositoryInstallationToken(
+  config,
+  repository,
+  permissions,
+) {
   const safeRepository = repositoryPath(repository);
   const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
   const installation = await request(`repos/${safeRepository}/installation`, {
     token: jwt,
   });
-  return createInstallationToken(config, installation.id);
+  return createInstallationToken(
+    config,
+    installation.id,
+    installationTokenRequestBody(repository, permissions),
+  );
 }
 
 export async function dispatchRepositoryEvent(
@@ -205,7 +258,9 @@ export async function dispatchRepositoryEvent(
   }
 
   const safeRepository = repositoryPath(repository);
-  const token = await createRepositoryInstallationToken(config, repository);
+  const token = await createRepositoryInstallationToken(config, repository, {
+    contents: "write",
+  });
   await request(`repos/${safeRepository}/dispatches`, {
     token,
     method: "POST",
