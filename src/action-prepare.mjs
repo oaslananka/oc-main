@@ -1,5 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  assertActiveMaintenanceCampaignJob,
+  readMaintenanceCampaignState,
+} from "./campaign-state.mjs";
 import { loadConfig } from "./config.mjs";
 import { unwrapSignedJob, verifySignedJob } from "./dispatch.mjs";
 import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
@@ -40,6 +44,21 @@ if (!pr.head?.repo?.full_name || !pr.head?.ref || !pr.head?.sha) throw new Error
 const headRepository = pr.head.repo.full_name;
 const headBranch = pr.head.ref;
 const expectedHead = pr.head.sha;
+const campaignState = readMaintenanceCampaignState(
+  pr.body,
+  config.workerDispatchSecret,
+);
+let campaignIteration = null;
+if (campaignState) {
+  if (payload.mode !== "maintenance") {
+    throw new Error("Maintenance campaign pull requests accept maintenance mode only");
+  }
+  campaignIteration = assertActiveMaintenanceCampaignJob(campaignState, {
+    pullNumber: payload.pull_number,
+    commentId: payload.comment_id,
+    headSha: expectedHead,
+  }).iteration;
+}
 const headToken = await createRepositoryInstallationToken(
   config,
   headRepository,
@@ -96,6 +115,7 @@ await writeJob({
   allowEdits: payload.allow_edits, capabilities: payload.capabilities, prompt,
   qualityContext,
   qualityEvidence,
+  campaignIteration,
   headRepository, headBranch, expectedHead, repositoryDir, homeDir, remote,
   opencodeBin: config.opencodeBin, opencodeTimeoutMs: config.opencodeTimeoutMs,
 }, config.workerDispatchSecret);
