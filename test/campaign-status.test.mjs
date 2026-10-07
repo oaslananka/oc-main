@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MAINTENANCE_CAMPAIGN_STATUS_MARKER,
+  readMaintenanceCampaignWakeup,
   renderMaintenanceCampaignStatus,
   selectMaintenanceCampaignStatusComment,
 } from "../src/campaign-status.mjs";
@@ -166,4 +167,34 @@ test("renders scheduler-owned waiting and owner-review phases", () => {
   assert.match(waiting, /Waiting for current-head required checks/);
   assert.match(ready, /Current-head blocking evidence is retry eligible/);
   assert.match(review, /Owner review required/);
+  assert.equal(readMaintenanceCampaignWakeup(waiting), null);
+  assert.deepEqual(readMaintenanceCampaignWakeup(ready), {
+    iteration: 1,
+    expectedHead: "a".repeat(40),
+  });
+  assert.equal(readMaintenanceCampaignWakeup(review), null);
+});
+
+test("rejects malformed or duplicate automatic wakeup markers", () => {
+  assert.throws(
+    () =>
+      readMaintenanceCampaignWakeup(
+        "<!-- oc-main-maintenance-campaign-wakeup:v1:1:not-a-sha -->",
+      ),
+    /Malformed maintenance campaign wakeup marker/,
+  );
+
+  const ready = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "ready-remediation",
+  });
+  const marker = ready
+    .split("\n")
+    .find((line) => line.includes("oc-main-maintenance-campaign-wakeup"));
+  assert.ok(marker);
+  assert.throws(
+    () => readMaintenanceCampaignWakeup(ready + "\n" + marker),
+    /Multiple maintenance campaign wakeup markers/,
+  );
 });
