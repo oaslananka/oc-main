@@ -208,3 +208,23 @@ test("terminal completion prevents future campaign dispatches", () => {
     "terminal",
   );
 });
+
+test("expired campaign lease can be safely reclaimed without consuming another slot", () => {
+  const active = beginMaintenanceCampaignIteration(initial(), {
+    commentId: 101,
+    currentHead: HEAD_A,
+    maxIterations: 4,
+    nowSeconds: 1_700_000_000,
+  }).state;
+  const recovered = beginMaintenanceCampaignIteration(active, {
+    commentId: 102,
+    currentHead: HEAD_A,
+    maxIterations: 4,
+    nowSeconds: 1_700_000_000 + 45 * 60 + 1,
+  });
+
+  assert.equal(recovered.action, "dispatch");
+  assert.equal(recovered.state.iteration, 1);
+  assert.equal(recovered.state.active_comment_id, 102);
+  assert.equal(recovered.state.in_flight, true);
+});
