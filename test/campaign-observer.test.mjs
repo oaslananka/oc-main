@@ -29,8 +29,9 @@ function pr(head = HEAD_A) {
 function evidence({
   head = HEAD_A,
   pending = 0,
+  missing = 0,
   blocking = 0,
-  requiredReady = blocking === 0 && pending === 0,
+  requiredReady = blocking === 0 && pending === 0 && missing === 0,
   authorityComplete = true,
   findings = [],
 } = {}) {
@@ -42,7 +43,7 @@ function evidence({
       requiredCount: 1,
       blockingCount: blocking,
       pendingRequiredCount: pending,
-      missingRequiredCount: 0,
+      missingRequiredCount: missing,
       requiredReady,
     },
     checks: [
@@ -201,5 +202,53 @@ test("never exceeds trusted attempt and delay bounds", async () => {
       ...harness,
     }),
     /Invalid campaign observer delay/,
+  );
+});
+
+test("treats newly missing required checks as bounded settling grace", async () => {
+  const harness = observerHarness([
+    evidence({ missing: 1, requiredReady: false }),
+    evidence(),
+  ]);
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: state(),
+    readToken: "read",
+    statusToken: "write",
+    attempts: 2,
+    delayMs: 5,
+    ...harness,
+  });
+
+  assert.equal(result.attempt, 2);
+  assert.equal(result.decision.reason, "clean-settled-head");
+  assert.deepEqual(
+    harness.statusUpdates.map((status) => status.phase),
+    ["waiting-checks", "owner-review"],
+  );
+  assert.deepEqual(harness.sleeps, [5]);
+});
+
+test("routes persistent missing required checks to owner review at the bound", async () => {
+  const harness = observerHarness([
+    evidence({ missing: 1, requiredReady: false }),
+  ]);
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: state(),
+    readToken: "read",
+    statusToken: "write",
+    attempts: 2,
+    delayMs: 1,
+    ...harness,
+  });
+
+  assert.equal(result.attempt, 2);
+  assert.equal(result.decision.reason, "required-checks-missing");
+  assert.deepEqual(
+    harness.statusUpdates.map((status) => status.phase),
+    ["waiting-checks", "owner-review"],
   );
 });
