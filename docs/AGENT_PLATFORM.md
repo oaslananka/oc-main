@@ -63,7 +63,7 @@ The trusted prepare stage may also collect bounded, read-only quality evidence b
 
 Candidate changes to `.github/maintenance-policy.yml` do not influence the current run because policy is read from the PR base SHA. Invalid or unsupported policy syntax falls back to built-in defaults. Repository policy may strengthen remediation expectations, but it cannot disable inheritance of live GitHub required checks, downgrade a built-in analyzer policy, or remove a built-in blocking severity.
 
-Maintenance now has a bounded trusted initializer for ordinary issues: only an allowlisted owner `/oc maintenance` comment is accepted, trusted controller code creates a source-comment-bound branch plus draft PR, and execution immediately returns to the existing signed PR worker/finalizer path. Issue body text is not promoted into control-plane authority. Dependency-PR closing, workflow cancellation, automatic ready/merge transitions, multi-iteration campaign state, and provider credentials remain out of scope.
+Maintenance now has a bounded trusted initializer and signed campaign state for ordinary issues: only an allowlisted owner `/oc maintenance` comment is accepted, trusted controller code creates a source-comment-bound branch plus draft PR, stores HMAC-signed source/head/iteration state in the PR body, reserves one iteration, and execution returns to the existing signed PR worker/finalizer path. Prepare and finalize re-check the exact state lease; the base-SHA `campaign.max_iterations` limit is enforced across owner-triggered continuations. Issue body text is not promoted into control-plane authority. Dependency-PR closing, workflow cancellation, automatic next-iteration scheduling, automatic ready/merge transitions, and provider credentials remain out of scope.
 
 ## Security boundaries
 
@@ -73,7 +73,7 @@ Maintenance now has a bounded trusted initializer for ordinary issues: only an a
 - `subagent=*` is denied.
 - Shell is available for repository work, while Git push/commit/remote/config and external GitHub/SSH transport commands are denied.
 - OpenCode has no control-plane write credentials.
-- Trusted GitHub App installation tokens are down-scoped per repository and stage: controller dispatch uses contents write on the control repository; issue maintenance bootstrap uses contents/issues/pull-requests write on only the target repository; prepare uses pull-request read plus maintenance-only checks/contents/administration read when needed; head clone uses contents read; finalize uses pull-requests write for PR conversation result comments and a separate contents/workflows write token for the authorized head push.
+- Trusted GitHub App installation tokens are down-scoped per repository and stage: controller dispatch uses contents write on the control repository; issue maintenance bootstrap uses contents/issues/pull-requests write on only the target repository; campaign iteration control uses contents read plus pull-requests write to read base policy and update signed PR metadata; prepare uses pull-request read plus maintenance-only checks/contents/administration read when needed; head clone uses contents read; finalize uses pull-requests write for PR state/result comments and a separate contents/workflows write token for the authorized head push.
 - Finalization re-checks the PR head before non-force push.
 - High-risk mode prompts require an explicit self/security review.
 
@@ -89,7 +89,7 @@ OpenCode runs with JSON output. The worker extracts actual assistant text from s
 
 OpenCode process exits remain fail-closed by default. The worker inspects a non-zero result only for exit code `1`, with empty stderr and a fully parseable JSON event stream. It may classify that result as recovered only when the stream contains a session error followed by a later completed assistant text turn from a matching final step. An explicit final `step_finish` must be terminal (`stop`); its absence is tolerated because OpenCode's JSON event stream can race the final part at process teardown. Unexplained exit 1, malformed output, stderr, other exit codes, or an incomplete later turn remain failures. This classification does not bypass tracked-change completion gates, read-only enforcement, exact-head validation, or the trusted finalizer.
 
-Modes that semantically require an edit (`fix`, `apply`, `ci`, `release`, `refactor`) have a completion gate. If the first implementation pass produces no tracked change, the worker performs one bounded retry. If the second pass still produces no change, the run becomes `incomplete` and the workflow fails instead of reporting a false green completion. A genuine blocker must be reported explicitly with `BLOCKED:`.
+Modes that semantically require an edit (`fix`, `apply`, `ci`, `release`, `refactor`, `maintenance`) have a completion gate. If the first implementation pass produces no tracked change, the worker performs one bounded retry. If the second pass still produces no change, the run becomes `incomplete` and the workflow fails instead of reporting a false green completion. A genuine blocker must be reported explicitly with `BLOCKED:`.
 
 ## Validation
 
@@ -101,6 +101,7 @@ CI verifies:
 - absence of registered custom runtime agents;
 - trusted skill/instruction sources;
 - Git transport denies and subagent deny;
-- runtime isolation configuration.
+- runtime isolation configuration;
+- signed campaign-state tamper detection, exact-head leases, bounded iterations, dispatch rollback, and lease expiry recovery.
 
 Runtime changes should also receive an end-to-end free-model smoke test for one read-only and one edit-capable mode before production is considered stable.
