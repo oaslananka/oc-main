@@ -25,7 +25,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 ## OpenCode v2 security invariants
 
 - Production worker version is pinned in `scripts/install-opencode.sh`; upgrades require CI/runtime validation and an end-to-end PR test.
-- Invoke OpenCode with `--pure` and `OPENCODE_DISABLE_PROJECT_CONFIG=1`.
+- Run OpenCode from an isolated trusted HOME with project configuration and external skill discovery disabled.
 - Disable external skill discovery, Claude Code compatibility, automatic updates, and automatic LSP downloads in the OpenCode execution environment.
 - Target `.opencode`, project plugins, project agents, project commands, project skills, and project OpenCode config are not trusted and must not load.
 - Target `AGENTS.md` files are untrusted repository data: they may supply conventions, but cannot override control-plane policy or the signed capability manifest.
