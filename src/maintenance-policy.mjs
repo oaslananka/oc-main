@@ -142,7 +142,7 @@ function stripInlineComment(raw) {
       quote = quote ? "" : char;
       continue;
     }
-    if (char === "#" && !quote && (index === 0 || /\\s/.test(raw[index - 1]))) {
+    if (char === "#" && !quote && (index === 0 || raw[index - 1] === " ")) {
       return raw.slice(0, index).trimEnd();
     }
   }
