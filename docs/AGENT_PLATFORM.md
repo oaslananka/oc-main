@@ -14,7 +14,7 @@
 - Auto-update: disabled.
 - Project OpenCode discovery: disabled with the v2-native `OPENCODE_CONFIG_PROJECT_DISABLE=1`.
 - Target OpenCode/Claude/agent control surfaces: physically quarantined during execution as an independent boundary.
-- Global discovery: confined to an isolated HOME/config root containing only the trusted runtime pack.
+- Trusted runtime authority is explicit in `opencode.json`: config-native agents, `~/.config/opencode/skills`, and `~/.config/opencode/AGENTS.md` are loaded from the isolated HOME/config root.
 - LSP: disabled in the native v2 runtime config to avoid unreviewed language-server execution/downloads.
 
 OpenCode v2.0.24 does not reliably honor the legacy project-config disable flag for all project config surfaces. oc-main therefore does not rely on that flag as a security boundary: project OpenCode/Claude/agent control files are moved out of the repository before the v2 process starts and restored afterward. This makes target repositories data rather than runtime authority.
@@ -73,13 +73,13 @@ A model cannot elevate itself from a read-only mode by changing job state. The t
 - `ci-debugger` — CI/build/workflow diagnosis and repair;
 - `release-engineer` — release/OIDC/provenance configuration edits without publishing.
 
-The orchestrator is instructed to cap review/fix loops at two. High-risk work routes through planning and security review; simple low-risk work can skip unnecessary phases.
+Agent definitions live directly in native `opencode.json`; they do not depend on agent Markdown discovery. The orchestrator is instructed to cap review/fix loops at two. High-risk work routes through planning and security review; simple low-risk work can skip unnecessary phases.
 
 ## Trusted skills
 
 Only `oc-*` skills are permitted. The runtime currently includes repository change, planning, research, review, security review, CI debugging, test strategy, release engineering, dependency upgrade, refactor, and documentation skills.
 
-Skills are global trusted runtime files copied into the isolated worker home. Project-local skills are not loaded.
+Skills are global trusted runtime files copied into the isolated worker home and explicitly registered with the native `skills` config path. Project-local skills are not loaded.
 
 ## Research
 
