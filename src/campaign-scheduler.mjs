@@ -54,6 +54,9 @@ function normalizedEvidence(evidence) {
   );
   return {
     head: commitSha(evidence.headSha, "evidence head"),
+    base: evidence.baseSha
+      ? commitSha(evidence.baseSha, "evidence base")
+      : null,
     authorityComplete: evidence.requiredChecks?.authorityComplete === true,
     requiredCount: nonNegativeInteger(summary.requiredCount, "required count"),
     blockingChecks: nonNegativeInteger(summary.blockingCount, "blocking check count"),
@@ -90,11 +93,15 @@ function decision(action, reason, statusPhase, extra = {}) {
 export function decideMaintenanceCampaignContinuation({
   state,
   currentHead,
+  currentBaseSha = null,
   maxIterations,
   evidence = null,
 } = {}) {
   const campaign = normalizedState(state, maxIterations);
   const head = commitSha(currentHead, "current head");
+  const base = currentBaseSha
+    ? commitSha(currentBaseSha, "current base")
+    : null;
 
   if (campaign.terminal) {
     return decision("owner-review", "campaign-terminal", "owner-review", {
@@ -133,6 +140,14 @@ export function decideMaintenanceCampaignContinuation({
     return decision("refresh-evidence", "evidence-stale", "waiting-checks", {
       requiresEvidenceRefresh: true,
     });
+  }
+  if (base && snapshot.base !== base) {
+    return decision(
+      "refresh-evidence",
+      "evidence-base-stale",
+      "waiting-checks",
+      { requiresEvidenceRefresh: true },
+    );
   }
   if (!snapshot.authorityComplete) {
     return decision(
