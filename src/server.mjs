@@ -4,6 +4,7 @@ import { parseCommand } from "./command.mjs";
 import { evaluateAutomaticMaintenanceWakeup } from "./campaign-auto.mjs";
 import { createSignedJob, wrapSignedJob } from "./dispatch.mjs";
 import { createKeyedSerialExecutor } from "./keyed-lock.mjs";
+import { controllerRouteKey } from "./controller-route.mjs";
 import {
   abortMaintenanceCampaignDispatch,
   beginMaintenanceCampaignDispatch,
@@ -230,19 +231,6 @@ function rememberedResponse(deliveryId, response) {
   return response;
 }
 
-function routeKey(trigger, issueTrigger = null) {
-  if (issueTrigger?.issueNumber) {
-    return trigger.repository + "#issue-" + issueTrigger.issueNumber;
-  }
-  return trigger.repository + "#pr-" + trigger.pullNumber;
-}
-
-function maintenanceRouteKey(repository) {
-  const value = String(repository || "");
-  if (!value) throw new Error("Maintenance route repository is missing");
-  return value + "#maintenance";
-}
-
 async function handleAutomaticStatusWakeup(trigger) {
   const result = await evaluateAutomaticMaintenanceWakeup({
     config,
@@ -273,7 +261,10 @@ async function handleOcMainWebhook(rawBody, headers) {
       throw new Error("Campaign status webhook is missing repository or PR metadata");
     }
     const result = await routeSerial.run(
-      maintenanceRouteKey(statusTrigger.repository),
+      controllerRouteKey({
+        repository: statusTrigger.repository,
+        maintenance: true,
+      }),
       () => handleAutomaticStatusWakeup(statusTrigger),
     );
     return rememberedResponse(deliveryId, result);
@@ -309,10 +300,12 @@ async function handleOcMainWebhook(rawBody, headers) {
     );
   }
 
-  const serialKey =
-    command.mode === "maintenance"
-      ? maintenanceRouteKey(trigger.repository)
-      : routeKey(trigger, issueTrigger);
+  const serialKey = controllerRouteKey({
+    repository: trigger.repository,
+    maintenance: command.mode === "maintenance",
+    issueNumber: issueTrigger?.issueNumber ?? null,
+    pullNumber: trigger.pullNumber ?? null,
+  });
   const result = await routeSerial.run(
     serialKey,
     async () => {
