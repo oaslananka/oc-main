@@ -1,5 +1,14 @@
 import crypto from "node:crypto";
 import https from "node:https";
+import {
+  abortMaintenanceCampaignIteration as abortCampaignStateIteration,
+  beginMaintenanceCampaignIteration as beginCampaignStateIteration,
+  completeMaintenanceCampaignIteration as completeCampaignStateIteration,
+  createInitialMaintenanceCampaignState,
+  readMaintenanceCampaignState,
+  writeMaintenanceCampaignState,
+} from "./campaign-state.mjs";
+import { resolveMaintenancePolicy } from "./maintenance-policy.mjs";
 
 const API_HOSTNAME = "api.github.com";
 const API_VERSION = "2022-11-28";
@@ -75,6 +84,11 @@ function repositoryPath(repository) {
 }
 
 export const FINALIZER_COMMENT_TOKEN_PERMISSIONS = Object.freeze({
+  pull_requests: "write",
+});
+
+export const CAMPAIGN_CONTROL_TOKEN_PERMISSIONS = Object.freeze({
+  contents: "read",
   pull_requests: "write",
 });
 
@@ -281,6 +295,16 @@ export async function getPullRequest(repository, pullNumber, token) {
   return request(`repos/${safeRepository}/pulls/${safePullNumber}`, { token });
 }
 
+async function updatePullRequestBody(repository, pullNumber, body, token) {
+  const safeRepository = repositoryPath(repository);
+  const safePullNumber = positiveId(pullNumber, "pull request number");
+  return request(`repos/${safeRepository}/pulls/${safePullNumber}`, {
+    token,
+    method: "PATCH",
+    body: { body: String(body || "") },
+  });
+}
+
 export async function createIssueComment(repository, issueNumber, body, token) {
   const safeRepository = repositoryPath(repository);
   const safeIssueNumber = positiveId(issueNumber, "issue number");
@@ -440,6 +464,11 @@ export async function createOrReuseMaintenanceCampaign(
   let branch = names.primary;
   let existingPull = await findPullRequestForBranch(repository, branch, token);
   if (existingPull?.state === "open") {
+    assertReusableMaintenanceCampaign(
+      existingPull,
+      { issueNumber, commentId },
+      config.workerDispatchSecret,
+    );
     return { pullRequest: existingPull, branch, reused: true };
   }
   if (existingPull) {
@@ -450,6 +479,11 @@ export async function createOrReuseMaintenanceCampaign(
     branch = names.retry;
     existingPull = await findPullRequestForBranch(repository, branch, token);
     if (existingPull?.state === "open") {
+      assertReusableMaintenanceCampaign(
+        existingPull,
+        { issueNumber, commentId },
+        config.workerDispatchSecret,
+      );
       return { pullRequest: existingPull, branch, reused: true };
     }
     if (existingPull) {
@@ -457,14 +491,30 @@ export async function createOrReuseMaintenanceCampaign(
     }
   }
 
-  await createCampaignBranch(
+  const markerSha = await createCampaignBranch(
     repository,
     { issueNumber, branch, baseSha },
     token,
   );
-  const pullRequest = await createMaintenancePullRequest(
+  let pullRequest = await createMaintenancePullRequest(
     repository,
     { issueNumber, branch, baseBranch },
+    token,
+  );
+  const campaignState = createInitialMaintenanceCampaignState({
+    issueNumber,
+    commentId,
+    pullNumber: pullRequest.number,
+    headSha: markerSha,
+  });
+  pullRequest = await updatePullRequestBody(
+    repository,
+    pullRequest.number,
+    writeMaintenanceCampaignState(
+      pullRequest.body,
+      campaignState,
+      config.workerDispatchSecret,
+    ),
     token,
   );
   await createIssueComment(
@@ -476,6 +526,170 @@ export async function createOrReuseMaintenanceCampaign(
   );
 
   return { pullRequest, branch, reused: false };
+}
+
+function assertReusableMaintenanceCampaign(
+  pullRequest,
+  { issueNumber, commentId },
+  secret,
+) {
+  const state = readMaintenanceCampaignState(pullRequest?.body, secret);
+  if (!state) {
+    throw new Error("Existing maintenance campaign pull request has no trusted state");
+  }
+  if (
+    state.source_issue !== Number(issueNumber) ||
+    state.source_comment_id !== Number(commentId) ||
+    state.campaign_pr !== Number(pullRequest.number)
+  ) {
+    throw new Error("Existing maintenance campaign identity does not match source command");
+  }
+  return state;
+}
+
+function campaignStateForPullRequest(pullRequest, secret) {
+  const state = readMaintenanceCampaignState(pullRequest?.body, secret);
+  if (!state) return null;
+  if (state.campaign_pr !== Number(pullRequest?.number)) {
+    throw new Error("Maintenance campaign pull request identity is invalid");
+  }
+  return state;
+}
+
+export async function beginMaintenanceCampaignDispatch(
+  config,
+  { repository, pullNumber, commentId, nowSeconds = Math.floor(Date.now() / 1000) },
+) {
+  const token = await createRepositoryInstallationToken(
+    config,
+    repository,
+    CAMPAIGN_CONTROL_TOKEN_PERMISSIONS,
+  );
+  const pullRequest = await getPullRequest(repository, pullNumber, token);
+  const state = campaignStateForPullRequest(
+    pullRequest,
+    config.workerDispatchSecret,
+  );
+  if (!state) return { campaign: false, dispatch: true };
+  if (pullRequest.state !== "open") {
+    return { campaign: true, dispatch: false, reason: "closed" };
+  }
+  if (!pullRequest.head?.sha || !pullRequest.base?.sha) {
+    throw new Error("Maintenance campaign pull request head/base is unavailable");
+  }
+
+  const policyText = await getMaintenancePolicyText(
+    repository,
+    pullRequest.base.sha,
+    token,
+  );
+  const policyResult = resolveMaintenancePolicy(
+    policyText,
+    "base@" +
+      String(pullRequest.base.sha).slice(0, 12) +
+      ":.github/maintenance-policy.yml",
+  );
+  const maxIterations = policyResult.policy.campaign.max_iterations;
+  const transition = beginCampaignStateIteration(state, {
+    commentId,
+    currentHead: pullRequest.head.sha,
+    maxIterations,
+    nowSeconds,
+  });
+
+  if (transition.action === "dispatch" || transition.action === "limit") {
+    await updatePullRequestBody(
+      repository,
+      pullNumber,
+      writeMaintenanceCampaignState(
+        pullRequest.body,
+        transition.state,
+        config.workerDispatchSecret,
+      ),
+      token,
+    );
+  }
+
+  return {
+    campaign: true,
+    dispatch: transition.action === "dispatch",
+    reason: transition.action,
+    iteration: transition.state.iteration,
+    maxIterations,
+    expectedHead: transition.state.expected_head,
+    sourceIssue: transition.state.source_issue,
+  };
+}
+
+export async function abortMaintenanceCampaignDispatch(
+  config,
+  { repository, pullNumber, commentId, iteration, expectedHead },
+) {
+  const token = await createRepositoryInstallationToken(
+    config,
+    repository,
+    CAMPAIGN_CONTROL_TOKEN_PERMISSIONS,
+  );
+  const pullRequest = await getPullRequest(repository, pullNumber, token);
+  const state = campaignStateForPullRequest(
+    pullRequest,
+    config.workerDispatchSecret,
+  );
+  if (!state) return false;
+  const next = abortCampaignStateIteration(state, {
+    commentId,
+    iteration,
+    expectedHead,
+  });
+  await updatePullRequestBody(
+    repository,
+    pullNumber,
+    writeMaintenanceCampaignState(
+      pullRequest.body,
+      next,
+      config.workerDispatchSecret,
+    ),
+    token,
+  );
+  return true;
+}
+
+export async function completeMaintenanceCampaignDispatch(
+  repository,
+  {
+    pullNumber,
+    commentId,
+    iteration,
+    expectedHead,
+    newHead,
+    terminal = false,
+  },
+  token,
+  secret,
+) {
+  const pullRequest = await getPullRequest(repository, pullNumber, token);
+  const state = campaignStateForPullRequest(pullRequest, secret);
+  if (!state) return null;
+  if (pullRequest.state !== "open") {
+    throw new Error("Maintenance campaign pull request is not open");
+  }
+  if (pullRequest.head?.sha !== String(newHead || "").toLowerCase()) {
+    throw new Error("Maintenance campaign head changed before state completion");
+  }
+  const next = completeCampaignStateIteration(state, {
+    commentId,
+    iteration,
+    expectedHead,
+    newHead,
+    terminal,
+  });
+  await updatePullRequestBody(
+    repository,
+    pullNumber,
+    writeMaintenanceCampaignState(pullRequest.body, next, secret),
+    token,
+  );
+  return next;
 }
 
 function commitSha(value) {
