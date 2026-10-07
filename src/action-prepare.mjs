@@ -7,7 +7,7 @@ import {
 } from "./campaign-state.mjs";
 import { loadConfig } from "./config.mjs";
 import { unwrapSignedJob, verifySignedJob } from "./dispatch.mjs";
-import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
+import { MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS, createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
 import { buildAgentPrompt } from "./opencode.mjs";
 import { fetchCodacyQualityContext, fetchMaintenanceQualityContext } from "./quality-context.mjs";
@@ -30,12 +30,7 @@ const baseToken = await createRepositoryInstallationToken(
   config,
   payload.repository,
   payload.mode === "maintenance"
-    ? {
-        administration: "read",
-        checks: "read",
-        contents: "read",
-        pull_requests: "read",
-      }
+    ? MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS
     : { pull_requests: "read" },
 );
 const pr = await getPullRequest(payload.repository, payload.pull_number, baseToken);
