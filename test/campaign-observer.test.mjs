@@ -166,3 +166,21 @@ test("observer validates bounds and injected functions", async () => {
     TypeError,
   );
 });
+
+test("closed campaign stop sentinel exits without status writes", async () => {
+  let updates = 0;
+  let sleeps = 0;
+  const result = await observeMaintenanceCampaign({
+    loadSnapshot: async () => ({ stop: true, reason: "pull-request-closed" }),
+    updateStatus: async () => { updates += 1; },
+    sleep: async () => { sleeps += 1; },
+    maxAttempts: 3,
+    intervalMs: 0,
+  });
+
+  assert.equal(result.stopped, true);
+  assert.equal(result.stopReason, "pull-request-closed");
+  assert.equal(result.decision, null);
+  assert.equal(updates, 0);
+  assert.equal(sleeps, 0);
+});
