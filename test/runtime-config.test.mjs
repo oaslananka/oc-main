@@ -63,3 +63,65 @@ test("trusted skill pack uses only the oc- namespace", () => {
   assert.equal(fs.existsSync("runtime/opencode/skills/oc-refactor/SKILL.md"), true);
   assert.equal(fs.existsSync("runtime/opencode/skills/oc-docs/SKILL.md"), true);
 });
+
+test("trusted agents use native v2 permissions frontmatter", () => {
+  const orchestrator = fs.readFileSync(
+    "runtime/opencode/agents/orchestrator.md",
+    "utf8",
+  );
+  const planner = fs.readFileSync(
+    "runtime/opencode/agents/planner.md",
+    "utf8",
+  );
+  const researcher = fs.readFileSync(
+    "runtime/opencode/agents/researcher.md",
+    "utf8",
+  );
+  const reviewer = fs.readFileSync(
+    "runtime/opencode/agents/reviewer.md",
+    "utf8",
+  );
+  const securityReviewer = fs.readFileSync(
+    "runtime/opencode/agents/security-reviewer.md",
+    "utf8",
+  );
+  const testEngineer = fs.readFileSync(
+    "runtime/opencode/agents/test-engineer.md",
+    "utf8",
+  );
+  const implementer = fs.readFileSync(
+    "runtime/opencode/agents/implementer.md",
+    "utf8",
+  );
+  const ciDebugger = fs.readFileSync(
+    "runtime/opencode/agents/ci-debugger.md",
+    "utf8",
+  );
+  const releaseEngineer = fs.readFileSync(
+    "runtime/opencode/agents/release-engineer.md",
+    "utf8",
+  );
+
+  for (const agent of [
+    orchestrator,
+    planner,
+    researcher,
+    reviewer,
+    securityReviewer,
+    testEngineer,
+    implementer,
+    ciDebugger,
+    releaseEngineer,
+  ]) {
+    assert.equal(agent.includes("\npermissions:\n"), true);
+    assert.equal(agent.includes("\npermission:\n"), false);
+  }
+
+  assert.equal(orchestrator.includes("resource: implementer"), true);
+  assert.equal(orchestrator.includes("resource: security-reviewer"), true);
+
+  for (const editingAgent of [implementer, ciDebugger, releaseEngineer]) {
+    assert.equal(editingAgent.includes("- action: bash"), false);
+    assert.equal(editingAgent.includes("- action: edit"), true);
+  }
+});
