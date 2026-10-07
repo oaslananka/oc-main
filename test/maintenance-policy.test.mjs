@@ -97,3 +97,52 @@ required_checks:
   assert.equal(policy.campaign.max_dependencies_per_batch, 4);
   assert.deepEqual(policy.required_checks.names, ["build"]);
 });
+
+test("base policy cannot downgrade required analyzer authority", () => {
+  assert.throws(
+    () =>
+      parseMaintenancePolicy(`
+version: 1
+analyzers:
+  osv:
+    policy: advisory
+`),
+    /may only remain required or strengthen to required/,
+  );
+});
+
+test("base policy cannot narrow built-in blocking severities", () => {
+  assert.throws(
+    () =>
+      parseMaintenancePolicy(`
+version: 1
+analyzers:
+  sonar:
+    policy: advisory
+    block_new:
+      - critical
+`),
+    /cannot remove built-in severity blocker/,
+  );
+});
+
+test("base policy may strengthen advisory analyzers", () => {
+  const policy = parseMaintenancePolicy(`
+version: 1
+analyzers:
+  sonar:
+    policy: required
+    block_new:
+      - blocker
+      - critical
+      - high
+`);
+
+  assert.equal(policy.analyzers.sonar.policy, "required");
+  assert.deepEqual(policy.analyzers.sonar.block_new, [
+    "blocker",
+    "critical",
+    "high",
+  ]);
+});
+
