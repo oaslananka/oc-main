@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildOpenCodeEnvironment } from "../src/opencode.mjs";
+import { buildOpenCodeEnvironment, buildRetryPrompt, cleanOpenCodeOutput } from "../src/opencode.mjs";
 
 test("OpenCode worker environment uses native v2 isolation controls", () => {
   const env = buildOpenCodeEnvironment("/tmp/oc-home");
@@ -24,4 +24,26 @@ test("OpenCode worker environment uses native v2 isolation controls", () => {
       unsupported + " must not be injected into the v2 worker environment",
     );
   }
+});
+
+test("extracts assistant text from OpenCode JSONL output", () => {
+  const output = [
+    JSON.stringify({ type: "step_start", part: { type: "step-start" } }),
+    JSON.stringify({ type: "text", part: { type: "text", text: "first" } }),
+    JSON.stringify({ type: "text", part: { type: "text", text: "second" } }),
+    JSON.stringify({ type: "step_finish", part: { type: "step-finish" } }),
+  ].join("\n");
+
+  assert.equal(cleanOpenCodeOutput(output), "first\nsecond");
+});
+
+test("keeps plain output when structured JSON is absent", () => {
+  assert.equal(cleanOpenCodeOutput("plain result\n"), "plain result");
+});
+
+test("retry prompt requires implementation or explicit blocker", () => {
+  const prompt = buildRetryPrompt("original", "prior");
+  assert.match(prompt, /previous implementation pass completed without any tracked repository change/i);
+  assert.match(prompt, /BLOCKED:/);
+  assert.match(prompt, /prior/);
 });
