@@ -8,10 +8,17 @@ import {
 
 const job = await readJobUnsafe();
 const quarantineDir = path.resolve(".oc-main-job/quarantine");
-let quarantined = [];
+let quarantineState = null;
+
+function errorTail(value, limit = 8000) {
+  const text = String(value || "OpenCode failed");
+  if (text.length <= limit) return text;
+  return "[error output truncated to final " + limit + " characters]\n" +
+    text.slice(-limit);
+}
 
 try {
-  quarantined = await quarantineProjectControls(
+  quarantineState = await quarantineProjectControls(
     job.repositoryDir,
     quarantineDir,
   );
@@ -32,10 +39,7 @@ try {
     error: "",
   });
 } catch (error) {
-  const message = String(error?.message || error || "OpenCode failed").slice(
-    0,
-    4000,
-  );
+  const message = errorTail(error?.message || error);
   await writeResult({
     runStatus: "failure",
     output: "",
@@ -44,11 +48,11 @@ try {
   console.error(message);
   process.exitCode = 1;
 } finally {
-  if (quarantined.length > 0) {
+  if (quarantineState) {
     await restoreProjectControls(
       job.repositoryDir,
       quarantineDir,
-      quarantined,
+      quarantineState,
     );
   }
 }
