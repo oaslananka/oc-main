@@ -19,7 +19,7 @@ DISCOVER
   -> READY
 ```
 
-The current implementation includes the evidence/policy engine, the issue-origin initializer, and bounded signed campaign state. An allowlisted owner can start `/oc maintenance` from an ordinary issue; trusted controller code creates a dedicated source-comment-bound branch and draft PR, persists signed iteration/head state in that PR, and then reuses the existing PR evidence/worker/finalizer path. Dependency-PR supersession, automatic iteration scheduling, automatic ready/merge transitions, and optional workflow cancellation remain deferred.
+The current implementation includes the evidence/policy engine, issue-origin initializer, bounded signed campaign state, read-only dependency-PR discovery, sticky status, check-aware continuation decisions, bounded current-head observation, and a narrow automatic re-dispatch path. An allowlisted owner starts `/oc maintenance`; trusted code may continue only the same signed campaign/task when a fresh settled current-head decision is exactly `retry-eligible`. Dependency-PR mutation, Actions cancellation, automatic ready/merge transitions, and provider-write authority remain deferred.
 
 ## Authority model
 
@@ -74,6 +74,18 @@ Each issue-origin campaign draft PR contains one hidden HMAC-signed state marker
 The controller reads `campaign.max_iterations` from the current PR base SHA before every campaign dispatch. It refuses a stale expected head, a terminal campaign, a duplicate completed comment, a concurrent in-flight iteration, or an exhausted iteration budget. A dispatch reservation is rolled back when repository dispatch itself fails. Reservations older than 45 minutes may be reclaimed without consuming an extra iteration slot; any older worker that later starts will fail the prepare lease check because its active comment identity is no longer current.
 
 Trusted prepare re-verifies the signed state and exact head before OpenCode starts. Trusted finalization re-verifies the same iteration/comment/head state and updates the marker only after the result is known. A successful push advances `expected_head` to the pushed commit. Model output, including an explicit `BLOCKED:` result, does not itself gain authority to terminalize a campaign; incomplete/failed attempts consume an iteration and may be retried by a new owner comment until the controller observes the base-policy limit. Terminal state remains trusted control-plane authority.
+
+## Automatic re-dispatch
+
+Automatic continuation never treats sticky status text as authority by itself. When the bounded observer classifies settled current-head evidence as `retry-eligible`, the rendered `ready-remediation` status includes one hidden wakeup marker bound to the completed campaign iteration and exact expected head. No other status phase carries that marker.
+
+The VPS controller accepts only a canonical `oaslananka-ops[bot]` edited PR comment that contains both the sticky-status marker and the bounded wakeup identity. It then re-reads the HMAC-signed campaign state, rejects stale iteration/head markers, refreshes current-head maintenance evidence, re-runs the trusted continuation decision, re-reads state after evidence collection, and reserves exactly one next iteration before dispatch.
+
+The original owner-authorized maintenance task and selected allowed model are stored inside version-2 signed campaign state when the issue campaign is created. Automatic continuation reuses those signed values; it does not synthesize an owner comment and does not trust model/provider text as the new task. Legacy/manual-only campaign state remains non-automatic.
+
+Automatic dispatch reuses the existing signed manifest plus `repository_dispatch` transport. Manifest v3 binds trigger kind and campaign iteration. Trusted prepare re-checks the active signed iteration before OpenCode starts. Per-PR controller serialization plus the signed state reservation prevents duplicate/stale owner and automation routes from creating parallel iterations.
+
+If `repository_dispatch` itself fails, trusted code rolls back only the exact reservation it created. The rollback status does not contain an automatic wakeup marker, so a dispatch outage cannot create an unbounded self-retry loop. Max-iteration policy is re-read from the PR base before each reservation.
 
 Campaign PRs remain maintenance workspaces. The generated `oc-maintenance-issue-…` branch namespace is reserved: if its signed marker is missing, malformed, duplicated, or has an invalid signature, controller/prepare logic fails closed rather than treating it as an ordinary PR. A signed campaign marker does not grant the model new capabilities, and a non-maintenance worker job against a campaign PR is rejected before OpenCode execution.
 
