@@ -49,6 +49,8 @@ function trigger() {
     commentId: 500,
     commentUserId: 900,
     commentUserLogin: "oaslananka-ops[bot]",
+    expectedIteration: 1,
+    expectedHead: HEAD_A,
   };
 }
 
@@ -288,4 +290,56 @@ test("repository dispatch failure rolls back the exact automatic reservation", a
       maxIterations: 4,
     },
   ]);
+});
+
+test("stale wakeup generation is rejected before evidence collection", async () => {
+  let evidenceCalls = 0;
+  const h = harness({
+    dependencies: {
+      fetchMaintenanceQualityContextImpl: async () => {
+        evidenceCalls += 1;
+        return { evidence: evidence() };
+      },
+    },
+  });
+  const result = await evaluateAutomaticMaintenanceWakeup({
+    config: config(),
+    trigger: {
+      ...trigger(),
+      expectedIteration: 0,
+    },
+    ...h.dependencies,
+  });
+
+  assert.equal(result.dispatched, false);
+  assert.equal(result.reason, "stale-wakeup");
+  assert.equal(evidenceCalls, 0);
+  assert.equal(h.calls.reserve.length, 0);
+  assert.equal(h.calls.dispatch.length, 0);
+});
+
+test("stale wakeup head is rejected before evidence collection", async () => {
+  let evidenceCalls = 0;
+  const h = harness({
+    dependencies: {
+      fetchMaintenanceQualityContextImpl: async () => {
+        evidenceCalls += 1;
+        return { evidence: evidence() };
+      },
+    },
+  });
+  const result = await evaluateAutomaticMaintenanceWakeup({
+    config: config(),
+    trigger: {
+      ...trigger(),
+      expectedHead: "c".repeat(40),
+    },
+    ...h.dependencies,
+  });
+
+  assert.equal(result.dispatched, false);
+  assert.equal(result.reason, "stale-wakeup");
+  assert.equal(evidenceCalls, 0);
+  assert.equal(h.calls.reserve.length, 0);
+  assert.equal(h.calls.dispatch.length, 0);
 });
