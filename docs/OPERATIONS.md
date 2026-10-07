@@ -106,6 +106,7 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 ## GitHub Actions security boundary
 
 - control checkout uses `persist-credentials: false`;
+- trusted controller/prepare/finalize stages mint installation tokens with an explicit single-repository scope and stage-specific permissions instead of inheriting the GitHub App registration's full permission set;
 - OpenCode receives no Doppler/GitHub App/installation/webhook credential;
 - external-directory access, unattended questions, subagents, Git push/commit/remote/config, `gh`, SSH/SCP/rsync are denied by native v2 policy;
 - read-only modes cannot be pushed by the trusted finalizer;
