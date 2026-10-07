@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 const CAMPAIGN_STATE_PREFIX = "<!-- oc-main-maintenance-campaign-state:";
 const CAMPAIGN_STATE_PATTERN =
   /<!-- oc-main-maintenance-campaign-state:([A-Za-z0-9_-]+):([0-9a-f]{64}) -->/g;
+const CAMPAIGN_LEASE_SECONDS = 45 * 60;
 
 function positiveInteger(value, label) {
   const number = Number(value);
@@ -225,21 +226,34 @@ export function beginMaintenanceCampaignIteration(
   if (current.last_comment_id === triggerComment) {
     return { action: "duplicate", state: current };
   }
+
+  let available = current;
   if (current.in_flight) {
-    return { action: "busy", state: current };
+    const leaseAge = startedAt - current.started_at;
+    if (leaseAge <= CAMPAIGN_LEASE_SECONDS) {
+      return { action: "busy", state: current };
+    }
+    available = normalizedState({
+      ...current,
+      iteration: current.iteration - 1,
+      in_flight: false,
+      active_comment_id: null,
+      started_at: null,
+    });
   }
-  if (current.iteration >= maximum) {
+
+  if (available.iteration >= maximum) {
     return {
       action: "limit",
-      state: normalizedState({ ...current, terminal: true }),
+      state: normalizedState({ ...available, terminal: true }),
     };
   }
 
   return {
     action: "dispatch",
     state: normalizedState({
-      ...current,
-      iteration: current.iteration + 1,
+      ...available,
+      iteration: available.iteration + 1,
       in_flight: true,
       active_comment_id: triggerComment,
       started_at: startedAt,
