@@ -43,7 +43,7 @@ function normalizedState(state, maxIterations) {
 function normalizedEvidence(evidence) {
   if (evidence === null || evidence === undefined) return null;
   if (typeof evidence !== "object" || Array.isArray(evidence)) {
-    throw new Error("Invalid scheduler evidence");
+    throw new TypeError("Invalid scheduler evidence");
   }
 
   const summary = evidence.checkSummary || {};
