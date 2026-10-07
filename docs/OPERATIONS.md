@@ -112,6 +112,7 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 - read-only modes cannot be pushed by the trusted finalizer;
 - finalizer PR conversation comments use a target-repository token scoped to `pull_requests:write`; GitHub rejected the narrower `issues:write + pull_requests:read` profile for PR comments during production canary validation;
 - finalizer requires the PR head SHA to equal the prepared snapshot and never force-pushes;
+- after a successful trusted push, state completion tolerates only bounded GitHub read-after-write lag where the API still reports the exact prepared head; it polls for the exact pushed SHA at most four reads with one-second maximum delay, and any unrelated SHA or timeout fails closed;
 - bot commits use the `oaslananka-ops[bot]` identity.
 
 ## Completion and quality context
