@@ -17,6 +17,7 @@ export function buildOpenCodeEnvironment(home) {
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_DISABLE_CLAUDE_CODE: "1",
     OPENCODE_DISABLE_LSP_DOWNLOAD: "1",
+    OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
   };
 }
 
