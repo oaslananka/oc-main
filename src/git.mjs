@@ -21,8 +21,8 @@ export async function clonePullRequestHead({
   repository,
   branch,
   destination,
-  authorName = "oc-main[bot]",
-  authorEmail = "oc-main[bot]@users.noreply.github.com",
+  authorName = "oaslananka-ops[bot]",
+  authorEmail = "285859825+oaslananka-ops[bot]@users.noreply.github.com",
 }) {
   const remote = `https://github.com/${repository}.git`;
   await runProcess(
