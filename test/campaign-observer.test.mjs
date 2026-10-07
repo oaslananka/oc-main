@@ -94,6 +94,24 @@ function observerHarness(
     },
     sleepImpl: async (ms) => { sleeps.push(ms); },
   };
+
+async function observeSupersededCampaign(campaignStates) {
+  const origin = campaignStates[0];
+  const harness = observerHarness([evidence()], { campaignStates });
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: origin,
+    readToken: "read",
+    statusToken: "write",
+    campaignStateSecret: "secret",
+    attempts: 2,
+    delayMs: 1,
+    ...harness,
+  });
+  return { result, harness };
+}
+
 }
 
 test("waits on pending checks then stops on a clean settled head", async () => {
@@ -278,25 +296,14 @@ test("routes persistent missing required checks to owner review at the bound", a
 
 test("stops without overwriting status when a newer campaign iteration starts", async () => {
   const origin = state();
-  const advanced = state({
-    iteration: 2,
-    in_flight: true,
-    last_comment_id: 99,
-  });
-  const harness = observerHarness([evidence()], {
-    campaignStates: [origin, advanced],
-  });
-  const result = await observeMaintenanceCampaignCurrentHead({
-    repository: "owner/repo",
-    pullNumber: 7,
-    state: origin,
-    readToken: "read",
-    statusToken: "write",
-    campaignStateSecret: "secret",
-    attempts: 2,
-    delayMs: 1,
-    ...harness,
-  });
+  const { result, harness } = await observeSupersededCampaign([
+    origin,
+    state({
+      iteration: 2,
+      in_flight: true,
+      last_comment_id: 99,
+    }),
+  ]);
 
   assert.equal(result.decision.action, "superseded");
   assert.equal(result.decision.reason, "campaign-state-advanced");
@@ -306,20 +313,10 @@ test("stops without overwriting status when a newer campaign iteration starts", 
 
 test("stops without status writes when signed campaign state disappears", async () => {
   const origin = state();
-  const harness = observerHarness([evidence()], {
-    campaignStates: [origin, null],
-  });
-  const result = await observeMaintenanceCampaignCurrentHead({
-    repository: "owner/repo",
-    pullNumber: 7,
-    state: origin,
-    readToken: "read",
-    statusToken: "write",
-    campaignStateSecret: "secret",
-    attempts: 2,
-    delayMs: 1,
-    ...harness,
-  });
+  const { result, harness } = await observeSupersededCampaign([
+    origin,
+    null,
+  ]);
 
   assert.equal(result.decision.action, "superseded");
   assert.equal(result.decision.reason, "campaign-state-advanced");
