@@ -1,0 +1,7 @@
+setup:
+  - project: oc-main
+    config: main
+
+flags:
+  analytics: false
+  update-check: false

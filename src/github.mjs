@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
+import https from "node:https";
 
-const API = "https://api.github.com";
+const API_HOSTNAME = "api.github.com";
 const API_VERSION = "2022-11-28";
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_BYTES = 5_000_000;
 
 function base64url(value) {
   return Buffer.from(value)
@@ -22,56 +25,189 @@ function appJwt(appId, privateKey) {
   return `${unsigned}.${base64url(signature)}`;
 }
 
-async function request(path, { token, method = "GET", body } = {}) {
-  const response = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": API_VERSION,
-      "User-Agent": "oc-main",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+export function apiPath(pathname) {
+  const relative = String(pathname).replace(/^\/+/, "");
+  if (!relative || relative.includes("\\") || relative.includes("://")) {
+    throw new Error("Refusing invalid GitHub API path");
+  }
 
-  const text = await response.text();
-  let parsed = null;
-  if (text) {
+  for (const segment of relative.split("/")) {
+    let decoded;
     try {
-      parsed = JSON.parse(text);
+      decoded = decodeURIComponent(segment);
     } catch {
-      parsed = text;
+      throw new Error("Refusing invalid GitHub API path encoding");
+    }
+    if (
+      decoded === "." ||
+      decoded === ".." ||
+      decoded.includes("/") ||
+      decoded.includes("\\")
+    ) {
+      throw new Error("Refusing GitHub API path traversal");
     }
   }
 
-  if (!response.ok) {
-    const message =
-      typeof parsed === "object" && parsed?.message
-        ? parsed.message
-        : `GitHub API request failed (${response.status})`;
-    throw new Error(message);
+  return `/${relative}`;
+}
+
+function repositoryPath(repository) {
+  const parts = String(repository).split("/");
+  if (parts.length !== 2) {
+    throw new Error("Invalid GitHub repository full name");
   }
 
-  return parsed;
+  for (const part of parts) {
+    if (
+      !part ||
+      part === "." ||
+      part === ".." ||
+      !/^[A-Za-z0-9_.-]+$/.test(part)
+    ) {
+      throw new Error("Invalid GitHub repository full name");
+    }
+  }
+
+  return parts.map(encodeURIComponent).join("/");
+}
+
+function positiveId(value, label) {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return String(numeric);
+}
+
+async function request(pathname, { token, method = "GET", body } = {}) {
+  const payload = body ? JSON.stringify(body) : null;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": API_VERSION,
+    "User-Agent": "oc-main",
+    ...(payload
+      ? {
+          "Content-Type": "application/json",
+          "Content-Length": String(Buffer.byteLength(payload)),
+        }
+      : {}),
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: "https:",
+        hostname: API_HOSTNAME,
+        port: 443,
+        path: apiPath(pathname),
+        method,
+        headers,
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks = [];
+        let size = 0;
+
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_RESPONSE_BYTES) {
+            req.destroy(new Error("GitHub API response exceeded the size limit"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          let parsed = null;
+          if (text) {
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = text;
+            }
+          }
+
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
+            const message =
+              typeof parsed === "object" && parsed?.message
+                ? parsed.message
+                : `GitHub API request failed (${status})`;
+            reject(new Error(message));
+            return;
+          }
+
+          resolve(parsed);
+        });
+      },
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("GitHub API request timed out"));
+    });
+    req.on("error", reject);
+
+    if (payload) req.write(payload);
+    req.end();
+  });
 }
 
 export async function createInstallationToken(config, installationId) {
-  if (!installationId) throw new Error("Webhook payload has no installation ID");
+  const safeInstallationId = positiveId(installationId, "installation ID");
   const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
-  const result = await request(`/app/installations/${installationId}/access_tokens`, {
-    token: jwt,
-    method: "POST",
-  });
+  const result = await request(
+    `app/installations/${safeInstallationId}/access_tokens`,
+    {
+      token: jwt,
+      method: "POST",
+    },
+  );
   return result.token;
 }
 
+export async function createRepositoryInstallationToken(config, repository) {
+  const safeRepository = repositoryPath(repository);
+  const jwt = appJwt(config.githubAppId, config.githubPrivateKey);
+  const installation = await request(`repos/${safeRepository}/installation`, {
+    token: jwt,
+  });
+  return createInstallationToken(config, installation.id);
+}
+
+export async function dispatchRepositoryEvent(
+  config,
+  repository,
+  eventType,
+  clientPayload,
+) {
+  if (!/^[A-Za-z0-9._-]{1,100}$/.test(eventType)) {
+    throw new Error("Invalid repository dispatch event type");
+  }
+
+  const safeRepository = repositoryPath(repository);
+  const token = await createRepositoryInstallationToken(config, repository);
+  await request(`repos/${safeRepository}/dispatches`, {
+    token,
+    method: "POST",
+    body: {
+      event_type: eventType,
+      client_payload: clientPayload,
+    },
+  });
+}
+
 export async function getPullRequest(repository, pullNumber, token) {
-  return request(`/repos/${repository}/pulls/${pullNumber}`, { token });
+  const safeRepository = repositoryPath(repository);
+  const safePullNumber = positiveId(pullNumber, "pull request number");
+  return request(`repos/${safeRepository}/pulls/${safePullNumber}`, { token });
 }
 
 export async function createPullRequestComment(repository, pullNumber, body, token) {
-  return request(`/repos/${repository}/issues/${pullNumber}/comments`, {
+  const safeRepository = repositoryPath(repository);
+  const safePullNumber = positiveId(pullNumber, "pull request number");
+  return request(`repos/${safeRepository}/issues/${safePullNumber}/comments`, {
     token,
     method: "POST",
     body: { body },

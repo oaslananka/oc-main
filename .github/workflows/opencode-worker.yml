@@ -1,0 +1,56 @@
+name: opencode-worker
+
+on:
+  repository_dispatch:
+    types: [oc-run]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencode-${{ github.event.client_payload.repository }}-${{ github.event.client_payload.pull_number }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+
+      - name: Install OpenCode CLI
+        run: ./scripts/install-opencode.sh
+
+      - name: Install Doppler CLI
+        run: ./scripts/install-doppler.sh
+
+      - name: Prepare target PR
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          OC_JOB_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          doppler run --project oc-main --config main --             /usr/bin/env -u DOPPLER_TOKEN node src/action-prepare.mjs
+
+      - name: Run OpenCode on GitHub-hosted runner
+        id: opencode
+        continue-on-error: true
+        run: node src/action-run.mjs
+
+      - name: Finalize target PR
+        if: always() && steps.opencode.outcome != 'skipped'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          doppler run --project oc-main --config main --             /usr/bin/env -u DOPPLER_TOKEN node src/action-finalize.mjs
+
+      - name: Fail workflow when OpenCode failed
+        if: steps.opencode.outcome == 'failure'
+        run: exit 1

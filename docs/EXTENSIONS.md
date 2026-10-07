@@ -1,10 +1,10 @@
 # OpenCode extensions
 
-The central runner is intentionally prepared for shared OpenCode capabilities without adding files to target repositories.
+Shared OpenCode capabilities live in the control repository and are applied by GitHub-hosted workers. Target repositories do not need oc-main-specific files.
 
 ## Global instructions and skills
 
-Everything under `runtime/opencode/` is copied into the isolated job home before OpenCode starts. OpenCode therefore sees the central runtime policy and global skills through its normal `~/.config/opencode/` discovery paths.
+Everything under `runtime/opencode/` is copied into the GitHub Actions job's isolated OpenCode home before a run.
 
 Add shared skills under:
 
@@ -12,26 +12,28 @@ Add shared skills under:
 runtime/opencode/skills/<skill-name>/SKILL.md
 ```
 
-Target-repository `AGENTS.md` files still apply and should remain the source of repository-specific commands and invariants.
+Target-repository `AGENTS.md` remains the authority for repository-specific commands and invariants.
 
 ## MCP servers
 
-OpenCode supports local and remote MCP servers through its normal configuration. When MCP integration is added here, keep the configuration under the central runtime configuration rather than modifying every target repository.
+OpenCode supports local and remote MCP servers through its normal configuration. Central MCP configuration should live under `runtime/opencode/`.
 
-Secrets for an MCP server must not be committed. Add only the specific credential required by that MCP integration to the isolated OpenCode environment. Do not expose the GitHub App private key, webhook secret, or installation token to OpenCode.
+MCP credentials must be scoped separately and intentionally. Do not expose the GitHub App private key, webhook secret, Doppler bootstrap token, or installation tokens to OpenCode.
 
-Remote MCP endpoints should be allowlisted intentionally. Local MCP processes run inside the same sandbox boundary as OpenCode and should be treated as part of the trusted runtime image.
+If an MCP needs a secret, add only that specific credential to the OpenCode execution environment after reviewing the trust implications.
 
 ## Plugins and tools
 
-Prefer OpenCode-native skills, MCP servers, and repository-native tools. A ChatGPT plugin is not automatically an OpenCode plugin; equivalent functionality must be exposed through an API, MCP server, command-line tool, or another OpenCode-supported integration.
+Prefer OpenCode-native skills, MCP servers, and repository-native tools. ChatGPT plugins are not automatically OpenCode plugins; equivalent functionality must be exposed through an OpenCode-supported API, MCP server, CLI, or tool integration.
 
 ## Security rule
 
-Extensions must not weaken the central trust boundary:
+Extensions must preserve these boundaries:
 
-- the GitHub comment author is still checked by numeric user ID;
-- webhook signatures are still mandatory;
-- GitHub credentials remain controller-only;
-- the target checkout's `.git` directory is mounted read-only inside the OpenCode sandbox;
-- the controller, not OpenCode, creates commits and pushes changes.
+- only allowlisted numeric GitHub user IDs trigger work;
+- webhook HMAC verification happens on the VPS;
+- controller-to-worker jobs are signed and short-lived;
+- GitHub and Doppler credentials are used only by prepare/finalize steps;
+- the OpenCode execution step has no GitHub App or Doppler credentials;
+- target PR head state is checked again before push;
+- the worker never force-pushes.

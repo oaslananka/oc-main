@@ -19,16 +19,20 @@ case "$ARCH" in
     ;;
 esac
 
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends bubblewrap ca-certificates curl git nodejs npm
-
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${ASSET}" -o "$tmp/opencode.tar.gz"
+
+curl --fail --silent --show-error --location --proto "=https" --proto-redir "=https" \
+  "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${ASSET}" \
+  -o "$tmp/opencode.tar.gz"
+
 echo "${SHA256}  $tmp/opencode.tar.gz" | sha256sum -c -
 tar -xzf "$tmp/opencode.tar.gz" -C "$tmp"
-sudo install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
 
-node --version
+if [[ "$(id -u)" -eq 0 ]]; then
+  install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
+else
+  sudo install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
+fi
+
 /usr/local/bin/opencode --version
-bwrap --version

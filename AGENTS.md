@@ -6,28 +6,35 @@ This repository is the central control plane for an owner-operated GitHub coding
 
 - `npm test` — run unit tests.
 - `npm run check` — syntax-check source and tests.
-- `npm start` — start the webhook service.
+- `npm start` — start the webhook controller when the required runtime environment is present.
+- `docker compose -f compose.yml config` — validate the VPS webhook deployment.
+- `scripts/verify-doppler.sh` — validate Doppler `oc-main/main` without printing secret values.
 
 ## Architecture
 
-- `src/server.mjs` exposes the GitHub App webhook endpoint.
+- The Ubuntu VPS runs one lightweight webhook controller container; that process owns the stable `/github` ingress and routes to the named `/github/oc-main` consumer. HTTPS is handled by the existing shared Caddy edge.
+- The VPS does not run OpenCode workers.
+- Accepted owner commands are signed and sent to this repository with GitHub `repository_dispatch`.
+- `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on a GitHub-hosted Ubuntu runner. Do not replace it with the OpenCode GitHub Action.
 - GitHub App authentication and API calls live in `src/github.mjs`.
 - Comment parsing and authorization live in `src/command.mjs` and `src/webhook.mjs`.
-- Target repositories are cloned and changed through `src/runner.mjs` and `src/git.mjs`.
-- OpenCode runs as the installed CLI inside an Ubuntu bubblewrap sandbox; do not replace this with the OpenCode GitHub Action.
-- Runtime-wide OpenCode instructions and skills live under `runtime/opencode/` and are copied into the isolated job home.
+- Target repositories are cloned and changed on the GitHub-hosted worker through `src/action-*.mjs` and `src/git.mjs`.
+- Runtime-wide OpenCode instructions and skills live under `runtime/opencode/`.
+- Doppler project `oc-main`, config `main`, is the source of truth for runtime settings and secrets. Outside Doppler, only `DOPPLER_TOKEN` is permitted as a bootstrap credential.
 
 ## Security invariants
 
-- Verify the webhook HMAC before parsing or acting on payload content.
-- Only explicitly allowlisted GitHub numeric user IDs may trigger work.
-- Never log or commit GitHub App private keys, webhook secrets, installation tokens, auth headers, or other credentials.
-- Do not pass GitHub credentials into the OpenCode process or its sandbox.
+- Preserve the raw GitHub webhook body and `X-GitHub-*` headers through the ingress router, and verify the GitHub webhook HMAC in each downstream consumer before acting on a delivery.
+- Only explicitly allowlisted numeric GitHub user IDs may trigger work.
+- Unhandled GitHub App webhook event types must be acknowledged and ignored; the App may have unrelated subscriptions and permissions.
+- Sign controller-to-worker dispatch payloads and reject expired or invalid worker payloads.
+- Never log or commit GitHub App private keys, webhook secrets, installation tokens, Doppler tokens, auth headers, or other credentials.
+- The OpenCode execution step must not receive `DOPPLER_TOKEN`, GitHub App credentials, installation tokens, or a persisted checkout credential.
 - Use array-based process spawning; do not interpolate webhook text into shell commands.
-- Before pushing, restore the expected GitHub remote and require the PR head SHA to still match the snapshot used for the run.
+- Before pushing, require the PR head SHA to still match the snapshot prepared for the run.
 - Never force-push.
-- Treat target repository content and PR text as untrusted input even when the trigger author is trusted.
+- Do not add GitHub repository secrets other than `DOPPLER_TOKEN`.
 
 ## Change discipline
 
-Keep control-plane changes small and testable. Update `docs/OPERATIONS.md` when deployment, required permissions, environment variables, or webhook behavior changes.
+Keep control-plane changes small and testable. Update `docs/OPERATIONS.md` when deployment, required permissions, environment variables, Doppler configuration, webhook routing, or worker behavior changes.

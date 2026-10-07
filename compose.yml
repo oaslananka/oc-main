@@ -1,0 +1,40 @@
+name: oc-main
+
+services:
+  controller:
+    image: oc-main-webhook:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - /etc/oc-main/runtime-bootstrap:/run/secrets/runtime_bootstrap:ro
+    expose:
+      - "8787"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          require('http').get('http://127.0.0.1:8787/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      frontdoor:
+        aliases:
+          - oc-main-github-router
+
+networks:
+  frontdoor:
+    external: true
+    name: oaslananka-frontdoor

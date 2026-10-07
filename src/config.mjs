@@ -44,6 +44,21 @@ function privateKey() {
   );
 }
 
+function safePath(rawValue, name, fallback) {
+  const value = rawValue?.trim() || fallback;
+  if (
+    !value.startsWith("/") ||
+    value.length > 200 ||
+    value.includes("?") ||
+    value.includes("#") ||
+    value.includes("\\") ||
+    value.split("/").some((segment) => segment === "." || segment === "..")
+  ) {
+    throw new Error(`${name} must be a safe absolute URL path`);
+  }
+  return value;
+}
+
 export function loadConfig() {
   const allowedModels = new Set(
     csv(process.env.ALLOWED_MODELS || CURRENT_DEFAULT_MODELS.join(",")),
@@ -56,7 +71,7 @@ export function loadConfig() {
   }
 
   const allowedUserIds = new Set(
-    csv(process.env.ALLOWED_GITHUB_USER_IDS || "285490571").map((value) => {
+    csv(required("ALLOWED_GITHUB_USER_IDS")).map((value) => {
       const id = Number.parseInt(value, 10);
       if (!Number.isSafeInteger(id) || id <= 0) {
         throw new Error("ALLOWED_GITHUB_USER_IDS must contain numeric GitHub IDs");
@@ -65,23 +80,29 @@ export function loadConfig() {
     }),
   );
 
-  const sandboxMode = (process.env.SANDBOX_MODE || "bwrap").trim();
-  if (!new Set(["bwrap", "none"]).has(sandboxMode)) {
-    throw new Error("SANDBOX_MODE must be bwrap or none");
-  }
-
   return {
     port: positiveInteger("PORT", 8787),
+    githubIngressPath: safePath(
+      process.env.GITHUB_INGRESS_PATH,
+      "GITHUB_INGRESS_PATH",
+      "/github",
+    ),
+    webhookPath: safePath(
+      process.env.WEBHOOK_PATH,
+      "WEBHOOK_PATH",
+      "/github/oc-main",
+    ),
     githubAppId: required("GITHUB_APP_ID"),
     githubPrivateKey: privateKey(),
     githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),
+    workerDispatchSecret: required("WORKER_DISPATCH_SECRET"),
+    controlRepository: required("CONTROL_REPOSITORY"),
+    dispatchEventType: process.env.DISPATCH_EVENT_TYPE?.trim() || "oc-run",
     allowedUserIds,
     allowedModels,
     defaultModel,
     opencodeBin: process.env.OPENCODE_BIN?.trim() || "/usr/local/bin/opencode",
-    workRoot: path.resolve(process.env.WORK_ROOT?.trim() || "/var/lib/oc-main/jobs"),
-    maxConcurrentJobs: positiveInteger("MAX_CONCURRENT_JOBS", 1),
     opencodeTimeoutMs: positiveInteger("OPENCODE_TIMEOUT_MS", 1_200_000),
-    sandboxMode,
+    actionWorkRoot: path.resolve(".oc-main-job"),
   };
 }
