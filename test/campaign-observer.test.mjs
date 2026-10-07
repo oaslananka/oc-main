@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { observeMaintenanceCampaign } from "../src/campaign-observer.mjs";
+import { campaignObservationStopReason, observeMaintenanceCampaign } from "../src/campaign-observer.mjs";
 
 function snapshot(id = 1) {
   return { id };
@@ -183,4 +183,46 @@ test("closed campaign stop sentinel exits without status writes", async () => {
   assert.equal(result.decision, null);
   assert.equal(updates, 0);
   assert.equal(sleeps, 0);
+});
+
+test("old observer stops when a newer campaign iteration has started", () => {
+  assert.equal(
+    campaignObservationStopReason(
+      {
+        iteration: 2,
+        last_comment_id: 202,
+        in_flight: true,
+        terminal: false,
+      },
+      { iteration: 1, commentId: 101 },
+    ),
+    "campaign-advanced",
+  );
+  assert.equal(
+    campaignObservationStopReason(
+      {
+        iteration: 1,
+        last_comment_id: 101,
+        in_flight: false,
+        terminal: false,
+      },
+      { iteration: 1, commentId: 101 },
+    ),
+    "",
+  );
+});
+
+test("terminalized campaign stops an older observer", () => {
+  assert.equal(
+    campaignObservationStopReason(
+      {
+        iteration: 1,
+        last_comment_id: 101,
+        in_flight: false,
+        terminal: true,
+      },
+      { iteration: 1, commentId: 101 },
+    ),
+    "campaign-advanced",
+  );
 });
