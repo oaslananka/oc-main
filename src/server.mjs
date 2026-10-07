@@ -1,7 +1,7 @@
 import http from "node:http";
 import { loadConfig } from "./config.mjs";
 import { parseCommand } from "./command.mjs";
-import { createSignedJob } from "./dispatch.mjs";
+import { createSignedJob, wrapSignedJob } from "./dispatch.mjs";
 import { dispatchRepositoryEvent } from "./github.mjs";
 import { extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
 
@@ -84,7 +84,7 @@ async function handleOcMainWebhook(rawBody, headers) {
     config,
     config.controlRepository,
     config.dispatchEventType,
-    job,
+    wrapSignedJob(job),
   );
 
   rememberDelivery(deliveryId);

@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opencode-${{ github.event.client_payload.repository }}-${{ github.event.client_payload.pull_number }}
+  group: opencode-${{ github.event.client_payload.job.repository }}-${{ github.event.client_payload.job.pull_number }}
   cancel-in-progress: false
 
 jobs:
