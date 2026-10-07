@@ -41,7 +41,7 @@ The worker copies only `runtime/opencode/` into an isolated HOME and runs with:
 - `OPENCODE_DB=:memory:`;
 - `OPENCODE_CONFIG_DIR` pinned to the isolated trusted HOME config directory.
 
-Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Their control files are quarantined while OpenCode executes, and project discovery is disabled at the v2 server layer. LSP is disabled in the trusted runtime config.
+Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Their control files are quarantined while OpenCode executes, and project discovery is disabled at the v2 server layer. Trusted agents are defined directly in `opencode.json`; trusted skills and `AGENTS.md` are explicitly registered from the isolated config root. LSP is disabled in the trusted runtime config.
 
 ## GitHub App event handling
 
