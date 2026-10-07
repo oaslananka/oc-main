@@ -84,3 +84,24 @@ export function verifySignedJob(payload, secret, nowSeconds = Math.floor(Date.no
   }
   return normalized;
 }
+
+export function wrapSignedJob(job) {
+  if (!job || typeof job !== "object" || Array.isArray(job)) {
+    throw new Error("Signed job is missing");
+  }
+  return { job };
+}
+
+export function unwrapSignedJob(envelope) {
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
+    throw new Error("Worker envelope is missing");
+  }
+  const keys = Object.keys(envelope);
+  if (keys.length !== 1 || keys[0] !== "job") {
+    throw new Error("Invalid worker envelope");
+  }
+  if (!envelope.job || typeof envelope.job !== "object" || Array.isArray(envelope.job)) {
+    throw new Error("Worker envelope job is missing");
+  }
+  return envelope.job;
+}
