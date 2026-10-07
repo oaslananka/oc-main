@@ -63,8 +63,11 @@ export async function runProcess(
         return;
       }
       if (code !== 0) {
-        const detail = stderr.trim() || stdout.trim() || `exit code ${code}`;
-        reject(new Error(`${command} failed: ${detail}`));
+        const raw = stderr.trim() || stdout.trim() || "no process output";
+        const detail = raw.length > 12_000
+          ? "[process output truncated to final 12000 characters]\n" + raw.slice(-12_000)
+          : raw;
+        reject(new Error(`${command} failed with exit code ${code}: ${detail}`));
         return;
       }
 
