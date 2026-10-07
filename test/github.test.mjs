@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiPath, installationTokenRequestBody, maintenanceCampaignBranchName, requiredChecksApiPaths } from "../src/github.mjs";
+import { apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -96,8 +96,8 @@ test("installation token policy rejects unscoped or broad permissions", () => {
 
 test("maintenance campaign branch names are bounded and deterministic", () => {
   assert.deepEqual(maintenanceCampaignBranchNames(17, 101), {
-    primary: "oc-maintenance-issue-17",
-    retry: "oc-maintenance-issue-17-comment-101",
+    primary: "oc-maintenance-issue-17-comment-101",
+    retry: "oc-maintenance-issue-17-comment-101-retry",
   });
 });
 
