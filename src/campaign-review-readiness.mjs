@@ -40,6 +40,7 @@ function isConsistentlyCleanSnapshot(evidence, currentHead) {
       return false;
     }
     names.add(check.key);
+    if (check.blocking) return false;
     if (check.requiredBy.length > 0) {
       requiredCount += 1;
       if (

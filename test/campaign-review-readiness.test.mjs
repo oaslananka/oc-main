@@ -189,6 +189,13 @@ test("contradictory check summary and duplicate checks fail closed", () => {
   assert.equal(incomplete.ownerReviewReady, false);
   const duplicate = decide({ evidence: evidence({ checks: [initial.checks[0], initial.checks[0]] }) });
   assert.equal(duplicate.ownerReviewReady, false);
+  const contradictoryOptional = decide({
+    evidence: evidence({
+      checks: [...initial.checks, { key: "optional", state: "failure", status: "completed", conclusion: "failure", blocking: true, requiredBy: [] }],
+      checkSummary: { ...initial.checkSummary, candidateCount: 3 },
+    }),
+  });
+  assert.equal(contradictoryOptional.ownerReviewReady, false);
 });
 
 test("unknown successful-looking required conclusion and unknown finding verdict fail closed", () => {
