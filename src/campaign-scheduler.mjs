@@ -47,7 +47,11 @@ function normalizedEvidence(evidence) {
   }
 
   const summary = evidence.checkSummary || {};
+  const checks = Array.isArray(evidence.checks) ? evidence.checks : [];
   const findings = Array.isArray(evidence.findings) ? evidence.findings : [];
+  const requiredChecks = checks.filter(
+    (check) => Array.isArray(check?.requiredBy) && check.requiredBy.length > 0,
+  );
   return {
     head: commitSha(evidence.headSha, "evidence head"),
     authorityComplete: evidence.requiredChecks?.authorityComplete === true,
@@ -62,6 +66,12 @@ function normalizedEvidence(evidence) {
       "missing required count",
     ),
     requiredReady: summary.requiredReady === true,
+    failedRequired: requiredChecks.filter(
+      (check) => check?.blocking === true && check?.state === "failure",
+    ).length,
+    cancelledRequired: requiredChecks.filter(
+      (check) => check?.state === "cancelled",
+    ).length,
     blockingFindings: findings.filter((finding) => finding?.blocking === true)
       .length,
   };
@@ -145,6 +155,13 @@ export function decideMaintenanceCampaignContinuation({
       "waiting-checks",
     );
   }
+  if (snapshot.cancelledRequired > 0) {
+    return decision(
+      "owner-review",
+      "required-checks-cancelled",
+      "owner-review",
+    );
+  }
 
   const requiredStateConsistent =
     snapshot.requiredReady === (snapshot.blockingChecks === 0);
@@ -156,15 +173,26 @@ export function decideMaintenanceCampaignContinuation({
     );
   }
 
+  if (
+    snapshot.blockingChecks > 0 &&
+    snapshot.failedRequired !== snapshot.blockingChecks
+  ) {
+    return decision(
+      "owner-review",
+      "blocking-check-cause-ambiguous",
+      "owner-review",
+    );
+  }
+
   const blocking =
-    snapshot.blockingChecks > 0 || snapshot.blockingFindings > 0;
+    snapshot.failedRequired > 0 || snapshot.blockingFindings > 0;
   if (blocking) {
     return decision(
       "retry-eligible",
       "blocking-regression",
       "ready-remediation",
       {
-        blockingChecks: snapshot.blockingChecks,
+        blockingChecks: snapshot.failedRequired,
         blockingFindings: snapshot.blockingFindings,
       },
     );
