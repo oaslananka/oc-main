@@ -303,3 +303,26 @@ test("stops without overwriting status when a newer campaign iteration starts", 
   assert.deepEqual(harness.statusUpdates, []);
   assert.deepEqual(harness.sleeps, []);
 });
+
+test("stops without status writes when signed campaign state disappears", async () => {
+  const origin = state();
+  const harness = observerHarness([evidence()], {
+    campaignStates: [origin, null],
+  });
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: origin,
+    readToken: "read",
+    statusToken: "write",
+    campaignStateSecret: "secret",
+    attempts: 2,
+    delayMs: 1,
+    ...harness,
+  });
+
+  assert.equal(result.decision.action, "superseded");
+  assert.equal(result.decision.reason, "campaign-state-advanced");
+  assert.deepEqual(harness.statusUpdates, []);
+  assert.deepEqual(harness.sleeps, []);
+});
