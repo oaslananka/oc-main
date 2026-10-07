@@ -12,6 +12,9 @@ const PHASE_LABELS = new Map([
   ["completed-no-changes", "Completed without repository changes"],
   ["pushed", "Change pushed"],
   ["terminal", "Iteration limit reached"],
+  ["waiting-checks", "Waiting for current-head required checks"],
+  ["ready-remediation", "Current-head blocking evidence is retry eligible"],
+  ["owner-review", "Owner review required"],
 ]);
 
 function positiveInteger(value, label) {
