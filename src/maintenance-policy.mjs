@@ -1,0 +1,303 @@
+const MAX_POLICY_BYTES = 32_768;
+
+const ANALYZER_NAMES = new Set([
+  "codeql",
+  "osv",
+  "semgrep",
+  "sonar",
+  "codacy",
+  "socket",
+  "codecov",
+  "trivy",
+  "gitguardian",
+  "npm-audit",
+]);
+
+const ANALYZER_POLICIES = new Set([
+  "required",
+  "advisory",
+  "conditional",
+  "coverage",
+  "supply-chain",
+]);
+
+const SEVERITIES = new Set([
+  "blocker",
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+  "unknown",
+]);
+
+export const DEFAULT_MAINTENANCE_POLICY = Object.freeze({
+  version: 1,
+  campaign: Object.freeze({
+    max_iterations: 4,
+    max_dependencies_per_batch: 5,
+  }),
+  required_checks: Object.freeze({
+    inherit_from_github: true,
+    names: Object.freeze([]),
+  }),
+  analyzers: Object.freeze({
+    codeql: Object.freeze({ policy: "required", block_new: Object.freeze(["critical", "high"]) }),
+    osv: Object.freeze({ policy: "required", block_new: Object.freeze(["critical", "high", "medium", "low"]) }),
+    semgrep: Object.freeze({ policy: "required", block_new: Object.freeze(["critical", "high"]) }),
+    sonar: Object.freeze({ policy: "advisory", block_new: Object.freeze(["blocker", "critical"]) }),
+    codacy: Object.freeze({ policy: "advisory", block_new: Object.freeze(["critical"]) }),
+    socket: Object.freeze({ policy: "supply-chain", block_new: Object.freeze(["critical", "high"]) }),
+    codecov: Object.freeze({ policy: "coverage", block_new: Object.freeze([]) }),
+    trivy: Object.freeze({ policy: "conditional", block_new: Object.freeze(["critical", "high"]) }),
+    gitguardian: Object.freeze({ policy: "required", block_new: Object.freeze(["critical", "high"]) }),
+    "npm-audit": Object.freeze({ policy: "required", block_new: Object.freeze(["critical", "high"]) }),
+  }),
+});
+
+function cloneDefaults() {
+  return JSON.parse(JSON.stringify(DEFAULT_MAINTENANCE_POLICY));
+}
+
+function scalar(raw, lineNumber) {
+  const value = raw.trim();
+  if (!value) throw new Error("Missing maintenance policy value on line " + lineNumber);
+  if (/^[&*!{}\[\]|>]$/.test(value[0])) {
+    throw new Error("Unsupported YAML feature on line " + lineNumber);
+  }
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    const body = value.slice(1, -1);
+    if (body.includes("\n") || body.includes("\r")) {
+      throw new Error("Multiline policy values are not supported");
+    }
+    return body;
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+$/.test(value)) return Number.parseInt(value, 10);
+  return value;
+}
+
+function keyValue(trimmed, lineNumber) {
+  const index = trimmed.indexOf(":");
+  if (index <= 0) throw new Error("Expected key:value on line " + lineNumber);
+  const key = trimmed.slice(0, index).trim();
+  if (!/^[a-z0-9_-]+$/i.test(key)) {
+    throw new Error("Invalid maintenance policy key on line " + lineNumber);
+  }
+  return [key, trimmed.slice(index + 1).trim()];
+}
+
+function checkedInteger(value, name, minimum, maximum) {
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(name + " must be an integer between " + minimum + " and " + maximum);
+  }
+  return value;
+}
+
+function checkedStringList(values, name, { maxItems = 50, severities = false } = {}) {
+  if (!Array.isArray(values) || values.length > maxItems) {
+    throw new Error(name + " contains too many values");
+  }
+  const result = [];
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value || value.length > 160) throw new Error("Invalid value in " + name);
+    if (severities && !SEVERITIES.has(value.toLowerCase())) {
+      throw new Error("Unsupported severity in " + name + ": " + value);
+    }
+    result.push(severities ? value.toLowerCase() : value);
+  }
+  return [...new Set(result)];
+}
+
+export function parseMaintenancePolicy(text) {
+  const source = String(text ?? "");
+  if (Buffer.byteLength(source, "utf8") > MAX_POLICY_BYTES) {
+    throw new Error("Maintenance policy exceeds 32768 bytes");
+  }
+
+  const parsed = {
+    version: null,
+    campaign: {},
+    required_checks: { names: [] },
+    analyzers: {},
+  };
+
+  let section = null;
+  let analyzer = null;
+  let listTarget = null;
+
+  const lines = source.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineNumber = index + 1;
+    const raw = lines[index];
+    if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
+    if (raw.includes("\t")) throw new Error("Tabs are not supported in maintenance policy");
+    const indent = raw.length - raw.trimStart().length;
+    if (indent % 2 !== 0 || indent > 6) {
+      throw new Error("Maintenance policy indentation must use two spaces on line " + lineNumber);
+    }
+    const trimmed = raw.trim();
+
+    if (trimmed.startsWith("- ")) {
+      if (!listTarget) throw new Error("Unexpected list item on line " + lineNumber);
+      const value = scalar(trimmed.slice(2), lineNumber);
+      listTarget.push(value);
+      continue;
+    }
+    listTarget = null;
+
+    if (indent === 0) {
+      const [key, value] = keyValue(trimmed, lineNumber);
+      analyzer = null;
+      if (key === "version") {
+        parsed.version = scalar(value, lineNumber);
+        section = null;
+        continue;
+      }
+      if (!["campaign", "required_checks", "analyzers"].includes(key) || value) {
+        throw new Error("Unsupported top-level maintenance policy key on line " + lineNumber);
+      }
+      section = key;
+      continue;
+    }
+
+    if (!section) throw new Error("Nested maintenance policy value without section on line " + lineNumber);
+
+    if (section === "campaign") {
+      if (indent !== 2) throw new Error("Invalid campaign indentation on line " + lineNumber);
+      const [key, value] = keyValue(trimmed, lineNumber);
+      if (!["max_iterations", "max_dependencies_per_batch"].includes(key)) {
+        throw new Error("Unsupported campaign key: " + key);
+      }
+      parsed.campaign[key] = scalar(value, lineNumber);
+      continue;
+    }
+
+    if (section === "required_checks") {
+      if (indent === 2) {
+        const [key, value] = keyValue(trimmed, lineNumber);
+        if (key === "inherit_from_github") {
+          parsed.required_checks.inherit_from_github = scalar(value, lineNumber);
+          continue;
+        }
+        if (key === "names" && !value) {
+          listTarget = parsed.required_checks.names;
+          continue;
+        }
+        throw new Error("Unsupported required_checks key: " + key);
+      }
+      if (indent === 4 && parsed.required_checks.names) {
+        throw new Error("Required check list items must start with '- '");
+      }
+      throw new Error("Invalid required_checks indentation on line " + lineNumber);
+    }
+
+    if (section === "analyzers") {
+      if (indent === 2) {
+        const [key, value] = keyValue(trimmed, lineNumber);
+        if (value || !ANALYZER_NAMES.has(key)) {
+          throw new Error("Unsupported analyzer policy: " + key);
+        }
+        analyzer = key;
+        parsed.analyzers[analyzer] = { block_new: [] };
+        continue;
+      }
+      if (indent === 4 && analyzer) {
+        const [key, value] = keyValue(trimmed, lineNumber);
+        if (key === "policy") {
+          parsed.analyzers[analyzer].policy = scalar(value, lineNumber);
+          continue;
+        }
+        if (key === "block_new" && !value) {
+          listTarget = parsed.analyzers[analyzer].block_new;
+          continue;
+        }
+        throw new Error("Unsupported analyzer key: " + key);
+      }
+      if (indent === 6 && analyzer) {
+        throw new Error("Analyzer list items must start with '- '");
+      }
+      throw new Error("Invalid analyzers indentation on line " + lineNumber);
+    }
+  }
+
+  if (parsed.version !== 1) {
+    throw new Error("Maintenance policy version must be 1");
+  }
+
+  const policy = cloneDefaults();
+  policy.campaign.max_iterations = checkedInteger(
+    parsed.campaign.max_iterations ?? policy.campaign.max_iterations,
+    "campaign.max_iterations",
+    1,
+    8,
+  );
+  policy.campaign.max_dependencies_per_batch = checkedInteger(
+    parsed.campaign.max_dependencies_per_batch ?? policy.campaign.max_dependencies_per_batch,
+    "campaign.max_dependencies_per_batch",
+    1,
+    20,
+  );
+
+  const inherit = parsed.required_checks.inherit_from_github ?? true;
+  if (inherit !== true) {
+    throw new Error("required_checks.inherit_from_github must remain true");
+  }
+  policy.required_checks.inherit_from_github = true;
+  policy.required_checks.names = checkedStringList(
+    parsed.required_checks.names,
+    "required_checks.names",
+  );
+
+  for (const [name, override] of Object.entries(parsed.analyzers)) {
+    if (!ANALYZER_NAMES.has(name)) throw new Error("Unsupported analyzer: " + name);
+    if (override.policy !== undefined) {
+      const value = String(override.policy).toLowerCase();
+      if (!ANALYZER_POLICIES.has(value)) {
+        throw new Error("Unsupported analyzer policy for " + name + ": " + value);
+      }
+      policy.analyzers[name].policy = value;
+    }
+    if (override.block_new.length) {
+      policy.analyzers[name].block_new = checkedStringList(
+        override.block_new,
+        "analyzers." + name + ".block_new",
+        { severities: true, maxItems: 8 },
+      );
+    }
+  }
+
+  return policy;
+}
+
+export function resolveMaintenancePolicy(text, source = "builtin-default") {
+  if (text === null || text === undefined || String(text).trim() === "") {
+    return {
+      policy: cloneDefaults(),
+      source: "builtin-default",
+      warning: "",
+    };
+  }
+  try {
+    return {
+      policy: parseMaintenancePolicy(text),
+      source,
+      warning: "",
+    };
+  } catch (error) {
+    return {
+      policy: cloneDefaults(),
+      source: "builtin-default",
+      warning:
+        "Ignored invalid maintenance policy from " +
+        source +
+        ": " +
+        String(error?.message || error),
+    };
+  }
+}
