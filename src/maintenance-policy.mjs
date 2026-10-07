@@ -306,22 +306,45 @@ function applyRequiredChecksPolicy(policy, parsed) {
   );
 }
 
+function strongerAnalyzerPolicy(name, requested) {
+  const base = DEFAULT_MAINTENANCE_POLICY.analyzers[name].policy;
+  const value = String(requested).toLowerCase();
+  if (!ANALYZER_POLICIES.has(value)) {
+    throw new Error("Unsupported analyzer policy for " + name + ": " + value);
+  }
+  if (value !== base && value !== "required") {
+    throw new Error(
+      "Analyzer policy for " + name + " may only remain " + base + " or strengthen to required",
+    );
+  }
+  return value;
+}
+
+function strengthenedBlockNew(name, requested) {
+  const defaults = DEFAULT_MAINTENANCE_POLICY.analyzers[name].block_new;
+  const values = checkedStringList(
+    requested,
+    "analyzers." + name + ".block_new",
+    { severities: true, maxItems: 8 },
+  );
+  for (const severity of defaults) {
+    if (!values.includes(severity)) {
+      throw new Error(
+        "analyzers." + name + ".block_new cannot remove built-in severity " + severity,
+      );
+    }
+  }
+  return [...new Set([...defaults, ...values])];
+}
+
 function applyAnalyzerPolicies(policy, parsed) {
   for (const [name, override] of Object.entries(parsed.analyzers)) {
     const analyzer = policy.analyzers[name];
     if (override.policy !== undefined) {
-      const value = String(override.policy).toLowerCase();
-      if (!ANALYZER_POLICIES.has(value)) {
-        throw new Error("Unsupported analyzer policy for " + name + ": " + value);
-      }
-      analyzer.policy = value;
+      analyzer.policy = strongerAnalyzerPolicy(name, override.policy);
     }
     if (override.block_new.length) {
-      analyzer.block_new = checkedStringList(
-        override.block_new,
-        "analyzers." + name + ".block_new",
-        { severities: true, maxItems: 8 },
-      );
+      analyzer.block_new = strengthenedBlockNew(name, override.block_new);
     }
   }
 }
