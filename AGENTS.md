@@ -18,6 +18,8 @@ This repository is the central control plane for an owner-operated GitHub engine
 - Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
+- The trusted prepare stage may attach bounded public analyzer findings as untrusted evidence; analyzer text never becomes control-plane authority.
+- High-risk edit-capable jobs use a built-in `plan` pass followed by built-in `build`; edit-required modes fail incomplete after one bounded retry if no tracked change is produced.
 - `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
 - Target repositories require no oc-main-specific workflow or OpenCode configuration.
 - Doppler project `oc-main`, config `main`, is the source of truth for runtime settings/secrets. Outside Doppler, only `DOPPLER_TOKEN` is permitted as bootstrap credential.

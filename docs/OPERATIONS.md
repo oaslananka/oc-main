@@ -34,7 +34,7 @@ Read-only modes: `plan`, `research`, `review`, `security`, `test`, `explain`.
 
 Edit-capable modes: `auto`, `fix`, `apply`, `release`, `refactor`, `ci`.
 
-Free-tier execution uses built-in `plan` for read-only modes and built-in `build` for edit-capable modes. Specialized behavior comes from the signed mode prompt and trusted `oc-*` skills. Custom agents/subagents are disabled because current OpenCode Console free-tier rejects them.
+Free-tier execution uses built-in `plan` for read-only modes and built-in `build` for edit-capable modes. High-risk edit-capable jobs receive a separate read-only planning pass before implementation. Specialized behavior comes from the signed mode prompt, prepared quality context, and trusted `oc-*` skills. Custom agents/subagents are disabled because current OpenCode Console free-tier rejects them.
 
 ## OpenCode runtime isolation
 
@@ -111,6 +111,12 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 - read-only modes cannot be pushed by the trusted finalizer;
 - finalizer requires the PR head SHA to equal the prepared snapshot and never force-pushes;
 - bot commits use the `oaslananka-ops[bot]` identity.
+
+## Completion and quality context
+
+The trusted prepare stage fetches bounded public Codacy PR findings when available and adds them to the signed-mode prompt as untrusted evidence. Failure to fetch Codacy is soft; the task still runs with repository evidence.
+
+OpenCode CLI output is requested as JSON and reduced to assistant text events. For `fix`, `apply`, `ci`, `release`, and `refactor`, a no-change first pass triggers one bounded retry. A second no-change result is marked incomplete and the Actions run fails rather than reporting a successful no-op.
 
 ## MCP
 

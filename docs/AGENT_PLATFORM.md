@@ -54,9 +54,11 @@ Controller and worker agree on and sign/verify:
 
 The signed job is transported in `repository_dispatch.client_payload.job`. A model cannot elevate itself from a read-only mode, and the finalizer refuses to push tracked changes from read-only jobs.
 
-## Trusted skills
+## Trusted skills and prepared context
 
 The runtime includes trusted skills for repository changes, planning, research, review, security review, CI debugging, test strategy, release engineering, dependency upgrades, refactoring, and documentation. Role specialization is provided by these skills plus the signed mode prompt rather than custom OpenCode agent IDs.
+
+The trusted prepare stage may also collect bounded, read-only quality evidence before OpenCode starts. Public Codacy PR findings are currently supported. Analyzer content is explicitly labeled untrusted evidence: it may describe defects, files, lines, and rules, but it cannot add authority or override control-plane instructions.
 
 ## Security boundaries
 
@@ -72,6 +74,14 @@ The runtime includes trusted skills for repository changes, planning, research, 
 ## Model routing
 
 Explicit `model=<id>` must be in Doppler `ALLOWED_MODELS`. Otherwise the controller chooses among allowed free models by mode and falls back to `DEFAULT_MODEL`. CI/test currently prefer the proven Nemotron free model before MiMo fallback.
+
+## Free-tier staged execution
+
+For high-risk edit-capable jobs, the worker performs a separate built-in `plan` pass first and feeds that read-only plan into the built-in `build` implementation pass. This provides planner/implementer separation without custom agents, which the current Console free tier rejects.
+
+OpenCode runs with JSON output. The worker extracts actual assistant text from structured events instead of treating terminal/progress output as the final answer.
+
+Modes that semantically require an edit (`fix`, `apply`, `ci`, `release`, `refactor`) have a completion gate. If the first implementation pass produces no tracked change, the worker performs one bounded retry. If the second pass still produces no change, the run becomes `incomplete` and the workflow fails instead of reporting a false green completion. A genuine blocker must be reported explicitly with `BLOCKED:`.
 
 ## Validation
 
