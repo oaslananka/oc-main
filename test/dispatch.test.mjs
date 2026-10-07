@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import test from "node:test";
 import {
   createSignedJob,
@@ -96,4 +97,171 @@ test("rejects malformed repository dispatch envelopes", () => {
     () => unwrapSignedJob({ job, extra: true }),
     /Invalid worker envelope/,
   );
+});
+
+test("signs trigger kind and campaign iteration in manifest v3", () => {
+  const job = createSignedJob(
+    {
+      repository: "owner/repo",
+      pullNumber: 7,
+      commentId: 500,
+      commentUserId: 900,
+      triggerKind: "automation-status",
+      campaignIteration: 2,
+      reviewContext: null,
+    },
+    {
+      mode: "maintenance",
+      model: "opencode/nemotron-3-ultra-free",
+      prompt: "continue maintenance",
+    },
+    signingKey,
+  );
+  const verified = verifySignedJob(job, signingKey, job.issued_at);
+
+  assert.equal(verified.manifest_version, 3);
+  assert.equal(verified.trigger_kind, "automation-status");
+  assert.equal(verified.campaign_iteration, 2);
+  assert.equal(verified.comment_id, 500);
+});
+
+test("automatic worker manifests require maintenance mode and iteration identity", () => {
+  assert.throws(
+    () =>
+      createSignedJob(
+        {
+          repository: "owner/repo",
+          pullNumber: 7,
+          commentId: 500,
+          commentUserId: 900,
+          triggerKind: "automation-status",
+          reviewContext: null,
+        },
+        {
+          mode: "maintenance",
+          model: "opencode/nemotron-3-ultra-free",
+          prompt: "continue",
+        },
+        signingKey,
+      ),
+    /maintenance campaign iteration/,
+  );
+  assert.throws(
+    () =>
+      createSignedJob(
+        {
+          repository: "owner/repo",
+          pullNumber: 7,
+          commentId: 500,
+          commentUserId: 900,
+          triggerKind: "automation-status",
+          campaignIteration: 2,
+          reviewContext: null,
+        },
+        {
+          mode: "fix",
+          model: "opencode/big-pickle",
+          prompt: "continue",
+        },
+        signingKey,
+      ),
+    /maintenance campaign iteration/,
+  );
+});
+
+test("rejects trigger-kind or campaign-iteration tampering", () => {
+  const job = createSignedJob(
+    {
+      repository: "owner/repo",
+      pullNumber: 7,
+      commentId: 500,
+      commentUserId: 900,
+      triggerKind: "automation-status",
+      campaignIteration: 2,
+      reviewContext: null,
+    },
+    {
+      mode: "maintenance",
+      model: "opencode/nemotron-3-ultra-free",
+      prompt: "continue maintenance",
+    },
+    signingKey,
+  );
+
+  assert.throws(
+    () =>
+      verifySignedJob(
+        { ...job, campaign_iteration: 3 },
+        signingKey,
+        job.issued_at,
+      ),
+    /signature is invalid/,
+  );
+  assert.throws(
+    () =>
+      verifySignedJob(
+        { ...job, trigger_kind: "owner-comment" },
+        signingKey,
+        job.issued_at,
+      ),
+    /signature is invalid/,
+  );
+});
+
+test("verifies legacy v2 worker manifests for already queued jobs", () => {
+  const unsigned = {
+    repository: "owner/repo",
+    pull_number: 7,
+    comment_id: 11,
+    comment_user_id: 42,
+    model: "opencode/big-pickle",
+    mode: "fix",
+    agent: "build",
+    risk: "medium",
+    allow_edits: true,
+    capabilities: [
+      "read",
+      "glob",
+      "grep",
+      "list",
+      "skills",
+      "webfetch",
+      "websearch",
+      "shell",
+      "edit",
+    ],
+    prompt: "fix it",
+    review_context: null,
+    issued_at: 1_700_000_000,
+    nonce: "11111111-1111-4111-8111-111111111111",
+  };
+  const material = JSON.stringify([
+    2,
+    unsigned.repository,
+    unsigned.pull_number,
+    unsigned.comment_id,
+    unsigned.comment_user_id,
+    unsigned.model,
+    unsigned.mode,
+    unsigned.agent,
+    unsigned.risk,
+    unsigned.allow_edits,
+    unsigned.capabilities,
+    unsigned.prompt,
+    unsigned.review_context,
+    unsigned.issued_at,
+    unsigned.nonce,
+  ]);
+  const signature =
+    "sha256=" +
+    crypto.createHmac("sha256", signingKey).update(material).digest("hex");
+  const verified = verifySignedJob(
+    { ...unsigned, signature },
+    signingKey,
+    unsigned.issued_at + 1,
+  );
+
+  assert.equal(verified.manifest_version, 2);
+  assert.equal(verified.trigger_kind, "owner-comment");
+  assert.equal(verified.campaign_iteration, null);
 });
