@@ -126,6 +126,8 @@ Required checks are the union of:
 - required check names discoverable from live GitHub repository rules or legacy branch-protection metadata;
 - explicit names in the base maintenance policy.
 
+For `oc-main` itself, the protected base policy explicitly adds the `test` job from `.github/workflows/ci.yml`. A failed `test` check must be classified as a required blocker after all required checks settle; unknown or nonrequired workflow failures do not independently authorize automatic re-dispatch.
+
 A policy file cannot set `inherit_from_github: false`.
 
 If live required-check metadata cannot be read and no explicit base policy names exist, the evidence snapshot says authority is incomplete. It must not be interpreted as merge-ready.
@@ -275,7 +277,7 @@ The sticky renderer understands `waiting-checks`, `ready-remediation`, and `owne
 The observer:
 
 - mints a separate installation token with only `administration:read`, `checks:read`, `contents:read`, and `pull_requests:read`;
-- takes one fresh snapshot immediately and at most three more snapshots 20 seconds apart;
+- takes one fresh snapshot immediately and at most six more snapshots 20 seconds apart (a two-minute settling window);
 - re-reads the PR head after each evidence collection so a head change fails closed through the decision contract;
 - treats pending required checks as waiting;
 - gives newly missing required checks only the same bounded registration grace, then routes persistent missing checks to owner review;
@@ -290,7 +292,7 @@ The issue-origin initializer is implemented, but the following remain intentiona
 
 - mutating, closing, retargeting, or superseding dependency-bot PRs after the implemented read-only discovery/lane-proposal step;
 - automatically closing superseded dependency PRs;
-- automatically dispatching the next campaign iteration after checks settle;
+- broad automatic scheduling beyond the existing exact-head, signed-state retry-eligible wakeup path;
 - cancelling GitHub Actions runs;
 - changing draft/ready state;
 - merging a maintenance pull request.
