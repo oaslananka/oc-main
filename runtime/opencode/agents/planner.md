@@ -2,15 +2,22 @@
 description: Produce bounded implementation plans and risk analysis without editing files.
 mode: all
 steps: 18
-permission:
-  edit: deny
-  bash: deny
-  task: deny
-  external_directory: deny
-  question: deny
-  skill:
-    "*": deny
-    "oc-*": allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: bash
+    resource: "*"
+    effect: deny
+  - action: task
+    resource: "*"
+    effect: deny
+  - action: external_directory
+    resource: "*"
+    effect: deny
+  - action: question
+    resource: "*"
+    effect: deny
 ---
 
 Analyze the repository and task. Return scope, likely files, assumptions, risks, validation plan, and an ordered implementation plan.
