@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { loadConfig } from "./config.mjs";
-import { createPullRequestComment, createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
+import { FINALIZER_COMMENT_TOKEN_PERMISSIONS, createPullRequestComment, createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { commitChanges, hasChanges, pushHead } from "./git.mjs";
 import { finalizationDecision } from "./finalize-policy.mjs";
 import { readResult, readVerifiedJob } from "./action-state.mjs";
@@ -29,7 +29,7 @@ async function main() {
   const baseToken = await createRepositoryInstallationToken(
     config,
     job.repository,
-    { issues: "write", pull_requests: "read" },
+    FINALIZER_COMMENT_TOKEN_PERMISSIONS,
   );
 
   if (result.runStatus === "incomplete") {
