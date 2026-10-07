@@ -28,7 +28,7 @@ function normalizedState(state, maxIterations) {
   }
   const iteration = nonNegativeInteger(state.iteration, "iteration");
   const maximum = positiveInteger(maxIterations, "max iterations");
-  if (maximum > 8 || iteration > maximum) {
+  if (maximum > 8 || iteration > 8) {
     throw new Error("Invalid scheduler iteration bound");
   }
   return {
@@ -99,7 +99,15 @@ export function decideMaintenanceCampaignContinuation({
       requiresEvidenceRefresh: true,
     });
   }
-  if (campaign.iteration >= campaign.maximum) {
+  if (campaign.iteration > campaign.maximum) {
+    return decision(
+      "owner-review",
+      "iteration-policy-conflict",
+      "owner-review",
+      { terminal: true },
+    );
+  }
+  if (campaign.iteration === campaign.maximum) {
     return decision("owner-review", "iteration-limit", "owner-review", {
       terminal: true,
     });
@@ -138,6 +146,16 @@ export function decideMaintenanceCampaignContinuation({
     );
   }
 
+  const requiredStateConsistent =
+    snapshot.requiredReady === (snapshot.blockingChecks === 0);
+  if (!requiredStateConsistent) {
+    return decision(
+      "owner-review",
+      "required-check-state-inconsistent",
+      "owner-review",
+    );
+  }
+
   const blocking =
     snapshot.blockingChecks > 0 || snapshot.blockingFindings > 0;
   if (blocking) {
@@ -149,14 +167,6 @@ export function decideMaintenanceCampaignContinuation({
         blockingChecks: snapshot.blockingChecks,
         blockingFindings: snapshot.blockingFindings,
       },
-    );
-  }
-
-  if (!snapshot.requiredReady && snapshot.requiredCount > 0) {
-    return decision(
-      "owner-review",
-      "required-check-state-inconsistent",
-      "owner-review",
     );
   }
 
