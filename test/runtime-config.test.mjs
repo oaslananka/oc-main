@@ -82,6 +82,7 @@ test("trusted skill directory contains exactly the oc-main skill pack", () => {
     "oc-ci-debug",
     "oc-dependency-upgrade",
     "oc-docs",
+    "oc-maintenance",
     "oc-planning",
     "oc-refactor",
     "oc-release",
