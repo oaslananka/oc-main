@@ -26,7 +26,11 @@ async function main() {
   const config = loadConfig();
   const job = await readVerifiedJob(config.workerDispatchSecret);
   const result = await readResult();
-  const baseToken = await createRepositoryInstallationToken(config, job.repository);
+  const baseToken = await createRepositoryInstallationToken(
+    config,
+    job.repository,
+    { issues: "write", pull_requests: "read" },
+  );
 
   if (result.runStatus === "incomplete") {
     await createPullRequestComment(
@@ -71,7 +75,11 @@ async function main() {
   const latest = await getPullRequest(job.repository, job.pullNumber, baseToken);
   if (latest.head?.sha !== job.expectedHead) throw new Error("PR head changed while the GitHub Actions worker was running; retry the command");
 
-  const headToken = await createRepositoryInstallationToken(config, job.headRepository);
+  const headToken = await createRepositoryInstallationToken(
+    config,
+    job.headRepository,
+    { contents: "write", workflows: "write" },
+  );
   const commitSha = await commitChanges(job.repositoryDir, commitMessageForMode(job.mode));
   await pushHead({ token: headToken, repositoryDir: job.repositoryDir, remote: job.remote, branch: job.headBranch });
   await createPullRequestComment(job.repository, job.pullNumber,
