@@ -17,109 +17,99 @@ function loadConfig() {
   );
 }
 
-test("trusted OpenCode v2 config is native and locked down", () => {
+test("trusted OpenCode v2 config uses free-tier compatible built-in agents", () => {
   const config = loadConfig();
 
-  assert.equal(config.default_agent, "orchestrator");
+  assert.equal(config.default_agent, "build");
   assert.equal(config.share, "disabled");
   assert.equal(config.update, "disable");
   assert.equal(config.lsp, false);
   assert.deepEqual(config.skills, ["~/.config/opencode/skills"]);
   assert.deepEqual(config.instructions, ["~/.config/opencode/AGENTS.md"]);
+  assert.equal(Object.prototype.hasOwnProperty.call(config, "agents"), false);
 
-  assert.equal(hasRule(config.permissions, "external_directory", "*", "deny"), true);
+  assert.equal(
+    hasRule(config.permissions, "external_directory", "*", "deny"),
+    true,
+  );
   assert.equal(hasRule(config.permissions, "question", "*", "deny"), true);
   assert.equal(hasRule(config.permissions, "skill", "*", "deny"), true);
   assert.equal(hasRule(config.permissions, "skill", "oc-*", "allow"), true);
-  assert.equal(hasRule(config.permissions, "subagent", "*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "shell", "*git push*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "shell", "*git commit*", "deny"), true);
-  assert.equal(hasRule(config.permissions, "shell", "*git remote*", "deny"), true);
-
-  assert.equal(config.agents.build.disabled, true);
-  assert.equal(config.agents.plan.disabled, true);
+  assert.equal(hasRule(config.permissions, "shell", "*", "allow"), true);
+  assert.equal(
+    hasRule(config.permissions, "shell", "*git*push*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.permissions, "shell", "*git*commit*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.permissions, "shell", "*git*remote*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.permissions, "shell", "*git*config*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.permissions, "subagent", "*", "deny"),
+    true,
+  );
 
   assert.equal(config.mcp.servers.context7.type, "remote");
-  assert.equal(config.mcp.servers.context7.url, "https://mcp.context7.com/mcp");
+  assert.equal(
+    config.mcp.servers.context7.url,
+    "https://mcp.context7.com/mcp",
+  );
   assert.equal(config.mcp.servers.context7.oauth, false);
   assert.equal(config.mcp.servers.context7.disabled, false);
   assert.equal(config.mcp.servers.context7.protocol, "legacy");
 });
 
-test("trusted agent pack is defined directly in native v2 config", () => {
-  const config = loadConfig();
-  const ids = [
-    "orchestrator",
-    "planner",
-    "researcher",
-    "implementer",
-    "reviewer",
-    "security-reviewer",
-    "test-engineer",
-    "ci-debugger",
-    "release-engineer",
-  ];
-
-  for (const id of ids) {
-    assert.ok(config.agents[id], "missing trusted config agent " + id);
-    assert.equal(typeof config.agents[id].system, "string");
-    assert.ok(config.agents[id].system.length > 20);
-    assert.ok(Array.isArray(config.agents[id].permissions));
-  }
-
-  assert.equal(config.agents.orchestrator.mode, "primary");
-  assert.equal(config.agents.implementer.mode, "subagent");
-  assert.equal(config.agents.implementer.hidden, true);
-  assert.equal(config.agents["ci-debugger"].hidden, true);
-  assert.equal(config.agents["release-engineer"].hidden, true);
-
-  assert.equal(
-    hasRule(config.agents.orchestrator.permissions, "edit", "*", "deny"),
-    true,
-  );
-  assert.equal(
-    hasRule(config.agents.orchestrator.permissions, "shell", "*", "deny"),
-    true,
-  );
-  assert.equal(
-    hasRule(config.agents.orchestrator.permissions, "subagent", "implementer", "allow"),
-    true,
-  );
-  assert.equal(
-    hasRule(
-      config.agents.orchestrator.permissions,
-      "subagent",
-      "security-reviewer",
-      "allow",
-    ),
-    true,
-  );
-
-  for (const id of ["planner", "researcher", "reviewer", "security-reviewer"]) {
-    assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "deny"), true);
-    assert.equal(hasRule(config.agents[id].permissions, "shell", "*", "deny"), true);
-  }
-
-  for (const id of ["implementer", "ci-debugger", "release-engineer"]) {
-    assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "allow"), true);
-    assert.equal(
-      config.agents[id].permissions.some((rule) => rule.action === "shell"),
-      false,
-      id + " must inherit the global shell deny rules without overriding them",
-    );
-  }
-});
-
 test("trusted skill pack uses only the oc- namespace", () => {
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-repo-change/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-planning/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-research/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-review/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-security-review/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-ci-debug/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-test-strategy/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-release/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-dependency-upgrade/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-refactor/SKILL.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/skills/oc-docs/SKILL.md"), true);
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-repo-change/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-planning/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-research/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-review/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-security-review/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-ci-debug/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-test-strategy/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-release/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-dependency-upgrade/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-refactor/SKILL.md"),
+    true,
+  );
+  assert.equal(
+    fs.existsSync("runtime/opencode/skills/oc-docs/SKILL.md"),
+    true,
+  );
 });
