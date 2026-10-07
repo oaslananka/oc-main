@@ -1,38 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OPENCODE_VERSION="${OPENCODE_VERSION:-1.18.35}"
-ARCH="$(uname -m)"
+OPENCODE_VERSION="${OPENCODE_VERSION:-2.0.24}"
+PACKAGE="@opencode/cli@${OPENCODE_VERSION}"
 
-case "$ARCH" in
-  x86_64)
-    ASSET="opencode-linux-x64.tar.gz"
-    SHA256="c8f888b451f5494a18f858fffb0e0b68f4e4baa9c241761c5f206884f0fa640d"
-    ;;
-  aarch64|arm64)
-    ASSET="opencode-linux-arm64.tar.gz"
-    SHA256="f7f2ba59ee8aa94d388f9696575a32d20e71c2ee48def9f80fc693a60fec6c72"
-    ;;
-  *)
-    echo "Unsupported architecture: $ARCH" >&2
-    exit 1
-    ;;
-esac
+command -v npm >/dev/null 2>&1 || { echo "npm is required to install OpenCode v2" >&2; exit 1; }
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+npm install --global --no-audit --no-fund --loglevel=error "$PACKAGE"
 
-curl --fail --silent --show-error --location --proto "=https" --proto-redir "=https" \
-  "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${ASSET}" \
-  -o "$tmp/opencode.tar.gz"
-
-echo "${SHA256}  $tmp/opencode.tar.gz" | sha256sum -c -
-tar -xzf "$tmp/opencode.tar.gz" -C "$tmp"
-
-if [[ "$(id -u)" -eq 0 ]]; then
-  install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
-else
-  sudo install -m 0755 "$tmp/opencode" /usr/local/bin/opencode
+resolved="$(command -v opencode)"
+if [[ -z "$resolved" ]]; then
+  echo "OpenCode binary was not installed" >&2
+  exit 1
 fi
 
-/usr/local/bin/opencode --version
+if [[ "$resolved" != "/usr/local/bin/opencode" ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
+    ln -sfn "$resolved" /usr/local/bin/opencode
+  else
+    sudo ln -sfn "$resolved" /usr/local/bin/opencode
+  fi
+fi
+
+actual="$(/usr/local/bin/opencode --version | tr -d "\\r" | tail -n 1)"
+if [[ "$actual" != "$OPENCODE_VERSION" ]]; then
+  echo "Expected OpenCode ${OPENCODE_VERSION}, got ${actual}" >&2
+  exit 1
+fi
+
+echo "OpenCode ${actual} installed from ${PACKAGE}"
