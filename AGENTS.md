@@ -66,8 +66,9 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 - Repository dispatch transports the signed manifest as the single top-level `client_payload.job` envelope.
 - Use array-based process spawning; never interpolate webhook text into a shell command.
 - Re-check PR head immediately before push and never force-push.
-- Maintenance campaign state is HMAC-signed with trusted control-plane material, bounded by the base policy's `campaign.max_iterations`, and must match the exact PR head/comment/iteration at prepare and finalize. A 45-minute reservation lease prevents a controller crash from leaving a campaign permanently busy.
+- Maintenance campaign state is HMAC-signed with trusted control-plane material, bounded by the base policy's `campaign.max_iterations`, and must match the exact PR head/comment/iteration at prepare and finalize. A 45-minute reservation lease prevents a controller crash from leaving a campaign permanently busy. Issue-origin campaign PRs also maintain one controller-owned sticky status comment as a non-authoritative projection of signed state and bounded collector counts; status-comment failures must not alter campaign authority.
 - Dependency PR discovery accepts only recognized GitHub Bot actors (`dependabot[bot]`, `renovate[bot]`) and is evidence-only. Do not add close, retarget, supersede, merge, or cancellation authority to the discovery path.
+- Sticky campaign status updates may overwrite only the canonical `oaslananka-ops[bot]` comment carrying the trusted status marker. Human/lookalike/other-bot comments are never selected, and multiple trusted status comments fail closed for the status update.
 - Do not add GitHub repository secrets other than `DOPPLER_TOKEN`.
 
 ## Change discipline
