@@ -19,7 +19,7 @@ DISCOVER
   -> READY
 ```
 
-The current implementation is the first tranche: the evidence/policy engine used by `/oc maintenance` on an existing pull request. Issue-driven campaign creation, dependency-PR supersession, bounded multi-iteration orchestration, and optional workflow cancellation are deliberately deferred.
+The current implementation includes the evidence/policy engine plus a bounded issue-origin initializer. An allowlisted owner can start `/oc maintenance` from an ordinary issue; trusted controller code creates a dedicated source-comment-bound branch and draft PR, then reuses the existing PR evidence/worker/finalizer path. Dependency-PR supersession, bounded multi-iteration orchestration, automatic ready/merge transitions, and optional workflow cancellation remain deferred.
 
 ## Authority model
 
@@ -47,13 +47,17 @@ The candidate pull request cannot weaken the current run's maintenance policy. P
 - required to produce a tracked change or an explicit `BLOCKED:` result;
 - finalized with the same exact-head/non-force-push gates as other edit modes.
 
-Example on an existing PR:
+Examples:
 
 ```text
+# existing PR
 /oc maintenance remediate the current dependency, CI, security, and quality blockers
+
+# ordinary issue, allowlisted owner only
+/oc maintenance remediate the repository maintenance backlog without weakening gates
 ```
 
-This tranche does not make `/oc maintenance` valid on ordinary issues. The existing webhook surface remains PR-scoped.
+On an ordinary issue, no other `/oc` mode is accepted. The initializer does not treat the issue body as trusted instructions. It creates an empty marker commit on a branch bound to the source issue/comment identity, opens a draft PR against the repository default branch, comments the issue with the PR number, and dispatches the normal signed PR worker flow. Webhook redelivery can reuse the same open source-comment-bound PR.
 
 ## Evidence snapshot
 
@@ -182,10 +186,8 @@ Existing repository `concurrency.cancel-in-progress` behavior should be preferre
 
 ## Deferred campaign orchestration
 
-The following are intentionally out of scope for the evidence-engine tranche:
+The issue-origin initializer is implemented, but the following remain intentionally out of scope:
 
-- accepting `/oc maintenance` from ordinary issues;
-- opening a campaign branch or draft pull request;
 - discovering and grouping dependency-bot PRs into lanes;
 - automatically closing superseded dependency PRs;
 - updating sticky campaign status comments;
