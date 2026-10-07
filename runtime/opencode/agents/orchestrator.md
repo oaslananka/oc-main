@@ -2,24 +2,46 @@
 description: Coordinate safe repository work through specialized trusted subagents.
 mode: primary
 steps: 40
-permission:
-  edit: deny
-  bash: deny
-  external_directory: deny
-  question: deny
-  skill:
-    "*": deny
-    "oc-*": allow
-  task:
-    "*": deny
-    planner: allow
-    researcher: allow
-    implementer: allow
-    reviewer: allow
-    security-reviewer: allow
-    test-engineer: allow
-    ci-debugger: allow
-    release-engineer: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: bash
+    resource: "*"
+    effect: deny
+  - action: external_directory
+    resource: "*"
+    effect: deny
+  - action: question
+    resource: "*"
+    effect: deny
+  - action: task
+    resource: "*"
+    effect: deny
+  - action: task
+    resource: planner
+    effect: allow
+  - action: task
+    resource: researcher
+    effect: allow
+  - action: task
+    resource: implementer
+    effect: allow
+  - action: task
+    resource: reviewer
+    effect: allow
+  - action: task
+    resource: security-reviewer
+    effect: allow
+  - action: task
+    resource: test-engineer
+    effect: allow
+  - action: task
+    resource: ci-debugger
+    effect: allow
+  - action: task
+    resource: release-engineer
+    effect: allow
 ---
 
 You are the oc-main orchestrator.
