@@ -65,6 +65,7 @@ jobs:
           export HOME="$RUNNER_TEMP/oc-main-v2-home"
           mkdir -p "$HOME/.config"
           cp -R runtime/opencode "$HOME/.config/opencode"
+          export OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
           export OPENCODE_DISABLE_PROJECT_CONFIG=1
           export OPENCODE_DISABLE_CLAUDE_CODE=1
           export OPENCODE_DISABLE_AUTOUPDATE=1
@@ -74,5 +75,7 @@ jobs:
           opencode --version | grep -F "2.0.24"
           opencode debug config > "$RUNNER_TEMP/opencode-config.json"
           grep -F '"orchestrator"' "$RUNNER_TEMP/opencode-config.json"
+          grep -F '"update": "disable"' "$RUNNER_TEMP/opencode-config.json"
+          grep -F '"context7"' "$RUNNER_TEMP/opencode-config.json"
           opencode debug agents | grep -F orchestrator
           opencode debug agents | grep -F security-reviewer
