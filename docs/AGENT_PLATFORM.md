@@ -75,6 +75,7 @@ Maintenance now has a bounded trusted initializer, signed campaign state, read-o
 - OpenCode has no control-plane write credentials.
 - Trusted GitHub App installation tokens are down-scoped per repository and stage: controller dispatch uses contents write on the control repository; issue maintenance bootstrap uses contents/issues/pull-requests write on only the target repository; campaign iteration control uses contents read plus pull-requests write to read base policy and update signed PR metadata; prepare uses pull-request read plus maintenance-only checks/contents/administration read when needed; head clone uses contents read; finalize uses pull-requests write for PR state/result comments and a separate contents/workflows write token for the authorized head push.
 - Finalization re-checks the PR head before non-force push.
+- After the push, finalizer state completion permits only bounded GitHub read-after-write lag from that exact prepared head to the exact pushed commit. It never accepts a third head, and non-convergence remains a finalization failure.
 - High-risk mode prompts require an explicit self/security review.
 
 ## Model routing
