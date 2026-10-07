@@ -74,7 +74,11 @@ function repositoryPath(repository) {
   return repositoryParts(repository).map(encodeURIComponent).join("/");
 }
 
-export const FINALIZER_COMMENT_TOKEN_PERMISSIONS = Object.freeze({\n  pull_requests: "write",\n});\n\nconst TOKEN_PERMISSION_LEVELS = new Map([
+export const FINALIZER_COMMENT_TOKEN_PERMISSIONS = Object.freeze({
+  pull_requests: "write",
+});
+
+const TOKEN_PERMISSION_LEVELS = new Map([
   ["administration", new Set(["read"])],
   ["checks", new Set(["read"])],
   ["contents", new Set(["read", "write"])],
