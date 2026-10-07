@@ -100,7 +100,7 @@ function keyValue(trimmed, lineNumber) {
 
 function checkedInteger(value, name, minimum, maximum) {
   const numeric =
-    typeof value === "string" && /^-?[0-9]+$/.test(value)
+    typeof value === "string" && /^-?\d+$/.test(value)
       ? Number.parseInt(value, 10)
       : value;
   if (!Number.isSafeInteger(numeric) || numeric < minimum || numeric > maximum) {
