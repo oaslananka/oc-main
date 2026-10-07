@@ -306,7 +306,7 @@ test("stale wakeup generation is rejected before evidence collection", async () 
     config: config(),
     trigger: {
       ...trigger(),
-      expectedIteration: 0,
+      expectedIteration: 2,
     },
     ...h.dependencies,
   });
