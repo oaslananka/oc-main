@@ -44,3 +44,34 @@ jobs:
 
       - name: Build lightweight webhook controller image
         run: docker build --tag oc-main-webhook:ci .
+
+  opencode-v2-runtime:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+
+      - name: Install pinned OpenCode v2
+        run: ./scripts/install-opencode.sh
+
+      - name: Validate trusted OpenCode v2 runtime pack
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/oc-main-v2-home"
+          mkdir -p "$HOME/.config"
+          cp -R runtime/opencode "$HOME/.config/opencode"
+          export OPENCODE_DISABLE_PROJECT_CONFIG=1
+          export OPENCODE_DISABLE_CLAUDE_CODE=1
+          export OPENCODE_DISABLE_AUTOUPDATE=1
+          export OPENCODE_DISABLE_LSP_DOWNLOAD=1
+          export OPENCODE_DB=:memory:
+          opencode --version | grep -Fx "2.0.24"
+          opencode --pure debug config > "$RUNNER_TEMP/opencode-config.json"
+          node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(c.default_agent!=="orchestrator")process.exit(1)' "$RUNNER_TEMP/opencode-config.json"
+          opencode --pure agent list | grep -F orchestrator
+          opencode --pure agent list | grep -F security-reviewer
