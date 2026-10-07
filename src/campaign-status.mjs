@@ -54,6 +54,7 @@ function normalizedMetrics(evidence) {
     ? evidence.dependencyPlan.lanes
     : [];
   return {
+    evidenceHead: evidence?.headSha ? commitSha(evidence.headSha) : null,
     requiredChecks: nonNegativeInteger(check.requiredCount, "required check count"),
     blockingChecks: nonNegativeInteger(check.blockingCount, "blocking check count"),
     pendingRequired: nonNegativeInteger(check.pendingRequiredCount, "pending required check count"),
@@ -104,6 +105,14 @@ export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, e
   const identity = stateIdentity(state, maxIterations);
   const metrics = normalizedMetrics(evidence);
   const authority = metrics.authorityComplete ? "complete" : "incomplete";
+  const evidenceState = !metrics.evidenceHead
+    ? "not collected"
+    : metrics.evidenceHead === identity.head
+      ? "current for expected head"
+      : "stale for expected head";
+  const evidenceValue = metrics.evidenceHead
+    ? "`" + metrics.evidenceHead.slice(0, 12) + "` — " + evidenceState
+    : evidenceState;
   const lines = [
     "## oc-main maintenance campaign status",
     "",
@@ -113,7 +122,8 @@ export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, e
     "| Phase | " + phaseLabel(phase) + " |",
     "| Iteration | " + identity.iteration + " / " + identity.maximum + " |",
     "| Expected head | `" + identity.head.slice(0, 12) + "` |",
-    "| Required checks | " + metrics.requiredChecks + " required; " + metrics.blockingChecks + " blocking; " + metrics.pendingRequired + " pending; " + metrics.missingRequired + " missing; authority " + authority + " |",
+    "| Prepared evidence | " + evidenceValue + " |",
+    "| Required checks (prepared snapshot) | " + metrics.requiredChecks + " required; " + metrics.blockingChecks + " blocking; " + metrics.pendingRequired + " pending; " + metrics.missingRequired + " missing; authority " + authority + " |",
     "| Findings | " + metrics.findings + " normalized; " + metrics.blockingFindings + " blocking |",
     "| Dependency PRs | " + metrics.dependencyPullRequests + " recognized; " + metrics.dependencyLanes + " proposed lane(s) |",
   ];
