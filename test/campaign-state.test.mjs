@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   abortMaintenanceCampaignIteration,
   assertActiveMaintenanceCampaignJob,
+  beginAutomaticMaintenanceCampaignIteration,
   beginMaintenanceCampaignIteration,
   completeMaintenanceCampaignIteration,
   createInitialMaintenanceCampaignState,
@@ -246,5 +247,173 @@ test("campaign branch identity is exact and reserved", () => {
   assert.equal(
     isMaintenanceCampaignBranchName("oc-maintenance-issue-0-comment-101"),
     false,
+  );
+});
+
+test("automatic campaign metadata is signed in version 2 state", () => {
+  const state = createInitialMaintenanceCampaignState({
+    issueNumber: 23,
+    commentId: 101,
+    pullNumber: 26,
+    headSha: HEAD_A,
+    taskPrompt: "remediate current blockers only",
+    model: "opencode/nemotron-3-ultra-free",
+  });
+  assert.equal(state.version, 2);
+  assert.equal(state.auto_task_prompt, "remediate current blockers only");
+  assert.equal(state.auto_model, "opencode/nemotron-3-ultra-free");
+
+  const body = writeMaintenanceCampaignState("workspace", state, SECRET);
+  assert.deepEqual(readMaintenanceCampaignState(body, SECRET), state);
+  assert.throws(
+    () =>
+      readMaintenanceCampaignState(
+        body.replace("workspace", "workspace tamper"),
+        "different-secret",
+      ),
+    /signature is invalid/,
+  );
+});
+
+test("oversized automatic task metadata degrades to legacy manual-only state", () => {
+  const state = createInitialMaintenanceCampaignState({
+    issueNumber: 23,
+    commentId: 101,
+    pullNumber: 26,
+    headSha: HEAD_A,
+    taskPrompt: "x".repeat(4_001),
+    model: "opencode/nemotron-3-ultra-free",
+  });
+  assert.equal(state.version, 1);
+  assert.equal(state.auto_task_prompt, null);
+  assert.equal(state.auto_model, null);
+});
+
+test("automatic iteration reserves exactly the expected idle campaign generation", () => {
+  const automatic = createInitialMaintenanceCampaignState({
+    issueNumber: 23,
+    commentId: 101,
+    pullNumber: 26,
+    headSha: HEAD_A,
+    taskPrompt: "remediate current blockers",
+    model: "opencode/nemotron-3-ultra-free",
+  });
+  const first = beginAutomaticMaintenanceCampaignIteration(automatic, {
+    triggerCommentId: 500,
+    currentHead: HEAD_A,
+    expectedIteration: 0,
+    maxIterations: 4,
+    nowSeconds: 1_700_000_000,
+  });
+  assert.equal(first.action, "dispatch");
+  assert.equal(first.state.iteration, 1);
+  assert.equal(first.state.active_comment_id, 500);
+  assert.equal(first.state.in_flight, true);
+
+  assert.equal(
+    beginAutomaticMaintenanceCampaignIteration(first.state, {
+      triggerCommentId: 500,
+      currentHead: HEAD_A,
+      expectedIteration: 1,
+      maxIterations: 4,
+      nowSeconds: 1_700_000_001,
+    }).action,
+    "busy",
+  );
+});
+
+test("automatic iteration fails closed on legacy, stale, superseded and exhausted state", () => {
+  assert.equal(
+    beginAutomaticMaintenanceCampaignIteration(initial(), {
+      triggerCommentId: 500,
+      currentHead: HEAD_A,
+      expectedIteration: 0,
+      maxIterations: 4,
+      nowSeconds: 1_700_000_000,
+    }).action,
+    "legacy",
+  );
+
+  const automatic = createInitialMaintenanceCampaignState({
+    issueNumber: 23,
+    commentId: 101,
+    pullNumber: 26,
+    headSha: HEAD_A,
+    taskPrompt: "remediate",
+    model: "opencode/nemotron-3-ultra-free",
+  });
+  assert.equal(
+    beginAutomaticMaintenanceCampaignIteration(automatic, {
+      triggerCommentId: 500,
+      currentHead: HEAD_B,
+      expectedIteration: 0,
+      maxIterations: 4,
+      nowSeconds: 1_700_000_000,
+    }).action,
+    "stale",
+  );
+  assert.equal(
+    beginAutomaticMaintenanceCampaignIteration(
+      { ...automatic, iteration: 1 },
+      {
+        triggerCommentId: 500,
+        currentHead: HEAD_A,
+        expectedIteration: 0,
+        maxIterations: 4,
+        nowSeconds: 1_700_000_000,
+      },
+    ).action,
+    "superseded",
+  );
+  const exhausted = {
+    ...automatic,
+    iteration: 4,
+  };
+  const limited = beginAutomaticMaintenanceCampaignIteration(exhausted, {
+    triggerCommentId: 500,
+    currentHead: HEAD_A,
+    expectedIteration: 4,
+    maxIterations: 4,
+    nowSeconds: 1_700_000_000,
+  });
+  assert.equal(limited.action, "limit");
+  assert.equal(limited.state.terminal, true);
+});
+
+test("prepare lease assertion may bind the signed campaign iteration", () => {
+  const automatic = createInitialMaintenanceCampaignState({
+    issueNumber: 23,
+    commentId: 101,
+    pullNumber: 26,
+    headSha: HEAD_A,
+    taskPrompt: "remediate",
+    model: "opencode/nemotron-3-ultra-free",
+  });
+  const active = beginAutomaticMaintenanceCampaignIteration(automatic, {
+    triggerCommentId: 500,
+    currentHead: HEAD_A,
+    expectedIteration: 0,
+    maxIterations: 4,
+    nowSeconds: 1_700_000_000,
+  }).state;
+
+  assert.equal(
+    assertActiveMaintenanceCampaignJob(active, {
+      pullNumber: 26,
+      commentId: 500,
+      headSha: HEAD_A,
+      campaignIteration: 1,
+    }).iteration,
+    1,
+  );
+  assert.throws(
+    () =>
+      assertActiveMaintenanceCampaignJob(active, {
+        pullNumber: 26,
+        commentId: 500,
+        headSha: HEAD_A,
+        campaignIteration: 2,
+      }),
+    /job state is stale/,
   );
 });
