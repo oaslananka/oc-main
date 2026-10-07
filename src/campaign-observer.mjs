@@ -1,4 +1,5 @@
 import { decideMaintenanceCampaignContinuation } from "./campaign-scheduler.mjs";
+import { readMaintenanceCampaignState } from "./campaign-state.mjs";
 import {
   getPullRequest,
   tryUpdateMaintenanceCampaignStatus,
@@ -28,6 +29,46 @@ function exactHead(value, label) {
   return sha;
 }
 
+function observationLease(state) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    throw new Error("Campaign observer state is missing");
+  }
+  return {
+    pull: positiveInteger(state.campaign_pr, "campaign pull request"),
+    iteration: Number(state.iteration),
+    head: exactHead(state.expected_head, "campaign expected head"),
+    terminal: state.terminal === true,
+    inFlight: state.in_flight === true,
+    lastCommentId:
+      state.last_comment_id === null || state.last_comment_id === undefined
+        ? null
+        : positiveInteger(state.last_comment_id, "last comment ID"),
+  };
+}
+
+function sameObservationLease(origin, current) {
+  const left = observationLease(origin);
+  const right = observationLease(current);
+  return (
+    left.pull === right.pull &&
+    left.iteration === right.iteration &&
+    left.head === right.head &&
+    left.terminal === right.terminal &&
+    left.inFlight === false &&
+    right.inFlight === false &&
+    left.lastCommentId === right.lastCommentId
+  );
+}
+
+function supersededDecision() {
+  return Object.freeze({
+    action: "superseded",
+    reason: "campaign-state-advanced",
+    statusPhase: null,
+    dispatchEligible: false,
+  });
+}
+
 function shouldContinueObservation(decision) {
   return (
     decision.action === "hold" ||
@@ -49,9 +90,12 @@ function observedStatusPhase(decision, attempt, maximumAttempts) {
 async function collectCurrentHeadSnapshot({
   repository,
   pullNumber,
+  state,
   readToken,
+  campaignStateSecret,
   getPullRequestImpl,
   fetchMaintenanceQualityContextImpl,
+  readCampaignStateImpl,
 }) {
   const before = await getPullRequestImpl(repository, pullNumber, readToken);
   if (before.state !== "open") {
@@ -59,6 +103,17 @@ async function collectCurrentHeadSnapshot({
   }
   if (!before.head?.sha || !before.base?.sha || !before.base?.ref) {
     throw new Error("Maintenance campaign pull request head/base is unavailable");
+  }
+  const beforeState = readCampaignStateImpl(
+    before.body,
+    campaignStateSecret,
+  );
+  if (!sameObservationLease(state, beforeState)) {
+    return {
+      superseded: true,
+      currentHead: exactHead(before.head.sha, "current head"),
+      evidence: null,
+    };
   }
 
   const observedHead = exactHead(before.head.sha, "observed head");
@@ -75,8 +130,20 @@ async function collectCurrentHeadSnapshot({
   if (after.state !== "open" || !after.head?.sha) {
     throw new Error("Maintenance campaign pull request changed during observation");
   }
+  const afterState = readCampaignStateImpl(
+    after.body,
+    campaignStateSecret,
+  );
+  if (!sameObservationLease(state, afterState)) {
+    return {
+      superseded: true,
+      currentHead: exactHead(after.head.sha, "current head"),
+      evidence: null,
+    };
+  }
 
   return {
+    superseded: false,
     currentHead: exactHead(after.head.sha, "current head"),
     evidence: collected?.evidence || null,
   };
@@ -88,12 +155,14 @@ export async function observeMaintenanceCampaignCurrentHead({
   state,
   readToken,
   statusToken,
+  campaignStateSecret,
   workerRunId = null,
   attempts = CAMPAIGN_OBSERVER_MAX_ATTEMPTS,
   delayMs = CAMPAIGN_OBSERVER_DELAY_MS,
   getPullRequestImpl = getPullRequest,
   fetchMaintenanceQualityContextImpl = fetchMaintenanceQualityContext,
   updateStatusImpl = tryUpdateMaintenanceCampaignStatus,
+  readCampaignStateImpl = readMaintenanceCampaignState,
   sleepImpl = sleep,
 } = {}) {
   const maximumAttempts = positiveInteger(attempts, "attempt count");
@@ -110,10 +179,21 @@ export async function observeMaintenanceCampaignCurrentHead({
     const snapshot = await collectCurrentHeadSnapshot({
       repository,
       pullNumber,
+      state,
       readToken,
+      campaignStateSecret,
       getPullRequestImpl,
       fetchMaintenanceQualityContextImpl,
+      readCampaignStateImpl,
     });
+    if (snapshot.superseded) {
+      return {
+        attempt,
+        decision: supersededDecision(),
+        currentHead: snapshot.currentHead,
+        evidence: null,
+      };
+    }
     const maxIterations =
       snapshot.evidence?.policy?.campaign?.max_iterations;
     const decision = decideMaintenanceCampaignContinuation({
