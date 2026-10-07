@@ -14,6 +14,7 @@ const MODE_GUIDANCE = new Map([
   ["explain", "Explain the requested repository behavior or architecture from evidence. Use current authoritative sources when external behavior matters. Do not modify tracked files."],
   ["refactor", "Refactor narrowly while preserving behavior. Validate equivalence and avoid unrelated cleanup."],
   ["ci", "Diagnose CI/build/workflow failures, fix the root cause without weakening gates, validate the changed area, and self-review security-sensitive workflow changes."],
+  ["maintenance", "Act as a maintenance remediation engineer. Use prepared exact-head quality evidence and repository policy to fix current dependency, CI, security, and quality blockers. Prioritize new or worsened blocking evidence, avoid unrelated legacy cleanup, never weaken gates, and self-review the final dependency/supply-chain impact."],
 ]);
 
 export function buildOpenCodeEnvironment(home) {
