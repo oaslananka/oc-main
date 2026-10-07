@@ -69,9 +69,10 @@ jobs:
           export OPENCODE_DISABLE_CLAUDE_CODE=1
           export OPENCODE_DISABLE_AUTOUPDATE=1
           export OPENCODE_DISABLE_LSP_DOWNLOAD=1
+          export OPENCODE_DISABLE_EXTERNAL_SKILLS=1
           export OPENCODE_DB=:memory:
           opencode --version | grep -F "2.0.24"
-          opencode --pure debug config > "$RUNNER_TEMP/opencode-config.json"
+          opencode debug config > "$RUNNER_TEMP/opencode-config.json"
           node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(c.default_agent!=="orchestrator")process.exit(1)' "$RUNNER_TEMP/opencode-config.json"
-          opencode --pure agent list | grep -F orchestrator
-          opencode --pure agent list | grep -F security-reviewer
+          opencode agent list | grep -F orchestrator
+          opencode agent list | grep -F security-reviewer
