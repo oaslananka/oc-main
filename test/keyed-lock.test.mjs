@@ -6,12 +6,17 @@ test("serializes work for the same key", async () => {
   const executor = createKeyedSerialExecutor();
   const events = [];
   let releaseFirst;
+  let confirmFirstStarted;
   const gate = new Promise((resolve) => {
     releaseFirst = resolve;
+  });
+  const firstStarted = new Promise((resolve) => {
+    confirmFirstStarted = resolve;
   });
 
   const first = executor.run("repo#7", async () => {
     events.push("first-start");
+    confirmFirstStarted();
     await gate;
     events.push("first-end");
   });
@@ -20,7 +25,7 @@ test("serializes work for the same key", async () => {
     events.push("second-end");
   });
 
-  await Promise.resolve();
+  await firstStarted;
   assert.deepEqual(events, ["first-start"]);
   releaseFirst();
   await Promise.all([first, second]);
