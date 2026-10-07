@@ -2,110 +2,87 @@
 
 ## Purpose
 
-`oc-main` is a central engineering-agent control plane. GitHub PR comments select a signed execution mode; the VPS validates and dispatches the job; a GitHub-hosted ephemeral runner executes the trusted OpenCode runtime; a separate trusted finalizer owns Git commit/push/comment authority.
+`oc-main` is a central engineering-agent control plane. A PR comment selects a signed mode; the VPS authenticates and dispatches the job; a GitHub-hosted ephemeral runner executes the trusted OpenCode runtime; a separate trusted finalizer owns commit/push/comment authority.
 
-## OpenCode runtime
+## Runtime
 
-- Runtime line: OpenCode v2.
-- Production pin: `@opencode/cli@2.0.24`.
-- Installation: exact npm version through `scripts/install-opencode.sh`.
-- Execution: `opencode run --agent <agent> --model <model> <prompt>`.
-- Session database: in-memory.
-- Auto-update: disabled.
-- Project OpenCode discovery: disabled with the v2-native `OPENCODE_CONFIG_PROJECT_DISABLE=1`.
-- Target OpenCode/Claude/agent control surfaces: physically quarantined during execution as an independent boundary.
-- Trusted runtime authority is explicit in `opencode.json`: config-native agents, `~/.config/opencode/skills`, and `~/.config/opencode/AGENTS.md` are loaded from the isolated HOME/config root.
-- LSP: disabled in the native v2 runtime config to avoid unreviewed language-server execution/downloads.
+- OpenCode: pinned `@opencode/cli@2.0.24`.
+- Invocation: `opencode run --standalone --agent <build|plan> --model <model> <signed-role-prompt>`.
+- Session DB: in-memory.
+- Project OpenCode discovery: disabled with `OPENCODE_CONFIG_PROJECT_DISABLE=1`.
+- Project OpenCode/Claude/agent control files: physically quarantined and restored around execution.
+- Trusted skills: explicit `~/.config/opencode/skills` source, only `oc-*` permitted.
+- Trusted instructions: explicit `~/.config/opencode/AGENTS.md`.
+- LSP: disabled.
+- Context7: anonymous remote MCP, no injected Context7 credential.
 
-OpenCode v2.0.24 does not reliably honor the legacy project-config disable flag for all project config surfaces. oc-main therefore does not rely on that flag as a security boundary: project OpenCode/Claude/agent control files are moved out of the repository before the v2 process starts and restored afterward. This makes target repositories data rather than runtime authority.
+## Free-tier compatibility
 
-## Modes
+As of October 2026, OpenCode Console free-tier rejects custom primary agents and custom subagent sessions even when the same free model works with built-in agents. Production therefore does not register custom agents.
 
-| Mode | Agent | Tracked edits | Typical use |
+Signed execution mapping:
+
+| Mode | OpenCode agent | Tracked edits | Role supplied by trusted prompt |
 | --- | --- | ---: | --- |
-| `auto` | orchestrator | yes | general owner request |
-| `plan` | planner | no | implementation plan / risk analysis |
-| `research` | researcher | no | current docs / source research |
-| `fix` | orchestrator | yes | bug fix |
-| `apply` | orchestrator | yes | apply an approved change |
-| `review` | reviewer | no | PR/code review |
-| `security` | security-reviewer | no | threat/security review |
-| `test` | test-engineer | no | focused validation |
-| `release` | orchestrator | yes | release workflow/config changes only |
-| `explain` | researcher | no | architecture/behavior explanation |
-| `refactor` | orchestrator | yes | behavior-preserving refactor |
-| `ci` | orchestrator | yes | CI/build/workflow repair |
+| `auto` | `build` | yes | general implementation |
+| `plan` | `plan` | no | implementation planning |
+| `research` | `plan` | no | current-source research |
+| `fix` | `build` | yes | root-cause bug fixing |
+| `apply` | `build` | yes | scoped implementation |
+| `review` | `plan` | no | correctness/regression review |
+| `security` | `plan` | no | threat/security review |
+| `test` | `plan` | no | focused validation |
+| `release` | `build` | yes | release/OIDC/provenance configuration |
+| `explain` | `plan` | no | evidence-based explanation |
+| `refactor` | `build` | yes | behavior-preserving refactor |
+| `ci` | `build` | yes | CI/build/workflow diagnosis and repair |
 
-Examples:
-
-    /oc plan migrate npm publishing to OIDC
-    /oc research current npm Trusted Publishing requirements
-    /oc fix correct the retry race
-    /oc security review the workflow permissions
-    /oc ci repair the failing typecheck
-    /oc model=opencode/nemotron-3-ultra-free review
+Custom subagents remain globally denied. When the upstream free-tier limitation is fixed, a richer custom-agent graph may be reintroduced only after exact-version end-to-end tests.
 
 ## Signed capability manifest
 
-The controller derives and signs, and the worker re-derives and verifies:
+Controller and worker agree on and sign/verify:
 
 - repository / PR / comment identity;
 - selected model;
 - mode;
-- primary agent;
+- built-in execution agent;
 - risk classification;
 - whether tracked edits are allowed;
 - logical capability list;
-- prompt, review context, timestamp, and nonce.
+- task, review context, timestamp, and nonce.
 
-A model cannot elevate itself from a read-only mode by changing job state. The trusted finalizer also refuses to push tracked changes produced by a read-only mode.
-
-## Agent topology
-
-`orchestrator` is the primary change agent. It cannot directly edit files or run shell commands. It delegates to bounded subagents:
-
-- `planner` — scope, dependency and risk plan;
-- `researcher` — repository plus current web/docs research;
-- `implementer` — minimal code/config edits;
-- `reviewer` — correctness/regression review;
-- `security-reviewer` — auth/workflow/supply-chain/prompt-injection review;
-- `test-engineer` — focused repository-native validation;
-- `ci-debugger` — CI/build/workflow diagnosis and repair;
-- `release-engineer` — release/OIDC/provenance configuration edits without publishing.
-
-Agent definitions live directly in native `opencode.json`; they do not depend on agent Markdown discovery. The orchestrator is instructed to cap review/fix loops at two. High-risk work routes through planning and security review; simple low-risk work can skip unnecessary phases.
+The signed job is transported in `repository_dispatch.client_payload.job`. A model cannot elevate itself from a read-only mode, and the finalizer refuses to push tracked changes from read-only jobs.
 
 ## Trusted skills
 
-Only `oc-*` skills are permitted. The runtime currently includes repository change, planning, research, review, security review, CI debugging, test strategy, release engineering, dependency upgrade, refactor, and documentation skills.
+The runtime includes trusted skills for repository changes, planning, research, review, security review, CI debugging, test strategy, release engineering, dependency upgrades, refactoring, and documentation. Role specialization is provided by these skills plus the signed mode prompt rather than custom OpenCode agent IDs.
 
-Skills are global trusted runtime files copied into the isolated worker home and explicitly registered with the native `skills` config path. Project-local skills are not loaded.
+## Security boundaries
 
-## Research
-
-The researcher and trusted research skill may use OpenCode web search/web fetch when current facts matter. Research output should prefer official/primary sources, include URLs, and distinguish verified facts from inference.
-
-## MCP
-
-`runtime/opencode/opencode.json` enables the hosted Context7 MCP using anonymous read-only documentation access. No Context7 credential is injected into the OpenCode process. Do not pass control-plane secrets into OpenCode merely to enable an MCP.
-
-Future MCPs should be read-only by default and registered centrally. Write-capable GitHub, deployment, secret-manager, or infrastructure MCPs must not be exposed to the OpenCode execution process; use trusted controller/finalizer actions instead.
+- External-directory access is denied.
+- Questions are denied in unattended Actions runs.
+- Project skills/config/agents are quarantined and project discovery is disabled.
+- `subagent=*` is denied.
+- Shell is available for repository work, while Git push/commit/remote/config and external GitHub/SSH transport commands are denied.
+- OpenCode has no control-plane write credentials.
+- Finalization re-checks the PR head before non-force push.
+- High-risk mode prompts require an explicit self/security review.
 
 ## Model routing
 
-Explicit `model=<id>` still requires the Doppler allowlist. Otherwise mode routing prefers a stronger free model for plan/review/security/release and a faster free model for research/test/CI, then falls back to `DEFAULT_MODEL`.
+Explicit `model=<id>` must be in Doppler `ALLOWED_MODELS`. Otherwise the controller chooses among allowed free models by mode and falls back to `DEFAULT_MODEL`. CI/test currently prefer the proven Nemotron free model before MiMo fallback.
 
-`ALLOWED_MODELS` in Doppler remains the production authority even when code contains a broader current free-model fallback list.
+## Validation
 
-## Validation and upgrades
+CI verifies:
 
-CI validates:
+- unit/syntax tests and controller image;
+- exact OpenCode v2 installation;
+- resolved config and built-in `build`/`plan` policy;
+- absence of registered custom runtime agents;
+- trusted skill/instruction sources;
+- Git transport denies and subagent deny;
+- runtime isolation configuration.
 
-- Node unit/syntax tests;
-- Docker controller image;
-- exact OpenCode v2 install version;
-- resolved trusted OpenCode config;
-- trusted agent discovery;
-- runtime isolation flags and trusted skill namespace.
-
-Every OpenCode runtime/version upgrade should also receive an end-to-end PR validation covering one read-only mode and one edit mode before the new runtime is considered production-stable.
+Runtime changes should also receive an end-to-end free-model smoke test for one read-only and one edit-capable mode before production is considered stable.
