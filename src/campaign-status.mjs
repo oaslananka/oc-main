@@ -17,6 +17,26 @@ const PHASE_LABELS = new Map([
   ["owner-review", "Owner review required"],
 ]);
 
+const TRUSTED_DECISION_REASONS = new Set([
+  "campaign-terminal",
+  "iteration-in-flight",
+  "campaign-head-stale",
+  "iteration-policy-conflict",
+  "iteration-limit",
+  "evidence-missing",
+  "evidence-stale",
+  "evidence-base-stale",
+  "required-check-authority-incomplete",
+  "required-checks-missing",
+  "required-checks-pending",
+  "required-checks-cancelled",
+  "required-check-state-inconsistent",
+  "blocking-check-cause-ambiguous",
+  "blocking-regression",
+  "clean-settled-head",
+  "observation-timeout",
+]);
+
 function positiveInteger(value, label) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) {
@@ -86,6 +106,15 @@ function stateIdentity(state, maxIterations) {
   };
 }
 
+function decisionReasonLine(reason) {
+  if (reason === null || reason === undefined || reason === "") return null;
+  const value = String(reason);
+  if (!TRUSTED_DECISION_REASONS.has(value)) {
+    throw new Error("Invalid campaign status decision reason");
+  }
+  return "| Decision | `" + value + "` |";
+}
+
 function workerRunLine(workerRunId) {
   if (workerRunId === null || workerRunId === undefined || workerRunId === "") return null;
   return "| Worker run | `" + positiveInteger(workerRunId, "worker run ID") + "` |";
@@ -110,7 +139,14 @@ export function selectMaintenanceCampaignStatusComment(comments) {
   return trusted[0] || null;
 }
 
-export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, evidence = null, workerRunId = null }) {
+export function renderMaintenanceCampaignStatus({
+  state,
+  maxIterations,
+  phase,
+  evidence = null,
+  workerRunId = null,
+  decisionReason = null,
+}) {
   const identity = stateIdentity(state, maxIterations);
   const metrics = normalizedMetrics(evidence);
   const authority = metrics.authorityComplete ? "complete" : "incomplete";
@@ -132,6 +168,8 @@ export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, e
     "| Findings | " + metrics.findings + " normalized; " + metrics.blockingFindings + " blocking |",
     "| Dependency PRs | " + metrics.dependencyPullRequests + " recognized; " + metrics.dependencyLanes + " proposed lane(s) |",
   ];
+  const reasonLine = decisionReasonLine(decisionReason);
+  if (reasonLine) lines.push(reasonLine);
   const runLine = workerRunLine(workerRunId);
   if (runLine) lines.push(runLine);
   lines.push(
