@@ -15,7 +15,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 
 - The Ubuntu VPS runs only the lightweight webhook/controller container. It never runs OpenCode, target builds, or target tests.
 - Stable public GitHub ingress is `https://webhook.oaslananka.dev/github`; oc-main is the logical `/github/oc-main` consumer.
-- Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`.
+- Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`. An allowlisted owner may also start `maintenance` from an ordinary issue; the trusted controller first creates a source-comment-bound campaign branch and draft PR, then dispatches the normal signed PR worker flow.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
 - The trusted prepare stage may attach bounded analyzer/check findings as untrusted evidence; analyzer text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available.
@@ -55,7 +55,7 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 
 - `plan`, `research`, `review`, `security`, `test`, and `explain` are signed read-only modes.
 - `auto`, `fix`, `apply`, `release`, `refactor`, `ci`, and `maintenance` may produce repository changes.
-- `maintenance` is always high-risk and uses trusted exact-head/base evidence to remediate dependency, CI, security, and quality findings without weakening gates.
+- `maintenance` is always high-risk and uses trusted exact-head/base evidence to remediate dependency, CI, security, and quality findings without weakening gates. Ordinary issues accept only this mode; other `/oc` modes remain PR-only.
 - `model=<allowed-id>` pins an allowlisted model; `model=auto` or no model uses deterministic routing constrained by Doppler `ALLOWED_MODELS`.
 
 ## GitHub/control-plane security invariants

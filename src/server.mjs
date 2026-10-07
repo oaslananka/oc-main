@@ -2,8 +2,8 @@ import http from "node:http";
 import { loadConfig } from "./config.mjs";
 import { parseCommand } from "./command.mjs";
 import { createSignedJob, wrapSignedJob } from "./dispatch.mjs";
-import { dispatchRepositoryEvent } from "./github.mjs";
-import { extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
+import { createOrReuseMaintenanceCampaign, dispatchRepositoryEvent } from "./github.mjs";
+import { extractIssueCommentTrigger, extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
 
 const config = loadConfig();
 const seenDeliveries = new Set();
@@ -53,7 +53,11 @@ async function handleOcMainWebhook(rawBody, headers) {
 
   const eventName = headers["x-github-event"];
   const payload = JSON.parse(rawBody.toString("utf8"));
-  const trigger = extractPullRequestTrigger(eventName, payload);
+  const pullTrigger = extractPullRequestTrigger(eventName, payload);
+  const issueTrigger = pullTrigger
+    ? null
+    : extractIssueCommentTrigger(eventName, payload);
+  const trigger = pullTrigger || issueTrigger;
   if (!trigger) {
     rememberDelivery(deliveryId);
     return { status: 202, body: "ignored\n" };
@@ -70,13 +74,46 @@ async function handleOcMainWebhook(rawBody, headers) {
     return { status: 202, body: "ignored\n" };
   }
 
-  if (!trigger.repository || !trigger.pullNumber || !trigger.commentId) {
-    throw new Error("Webhook payload is missing required repository or PR metadata");
+  if (!trigger.repository || !trigger.commentId) {
+    throw new Error("Webhook payload is missing required repository or comment metadata");
+  }
+
+  let workerTrigger = trigger;
+  let workerCommand = command;
+  if (issueTrigger) {
+    if (!issueTrigger.issueNumber || command.mode !== "maintenance") {
+      rememberDelivery(deliveryId);
+      return { status: 202, body: "ignored\n" };
+    }
+    const campaign = await createOrReuseMaintenanceCampaign(config, {
+      repository: issueTrigger.repository,
+      issueNumber: issueTrigger.issueNumber,
+      commentId: issueTrigger.commentId,
+    });
+    if (!campaign.pullRequest?.number) {
+      throw new Error("Maintenance campaign pull request is unavailable");
+    }
+    if (campaign.terminal || campaign.pullRequest.state !== "open") {
+      rememberDelivery(deliveryId);
+      return { status: 202, body: "campaign closed\n" };
+    }
+    workerTrigger = {
+      ...issueTrigger,
+      pullNumber: campaign.pullRequest.number,
+    };
+    workerCommand = {
+      ...command,
+      prompt:
+        `Maintenance campaign originated from issue #${issueTrigger.issueNumber}. ` +
+        command.prompt,
+    };
+  } else if (!pullTrigger?.pullNumber) {
+    throw new Error("Webhook payload is missing pull request metadata");
   }
 
   const job = createSignedJob(
-    trigger,
-    command,
+    workerTrigger,
+    workerCommand,
     config.workerDispatchSecret,
   );
 
@@ -89,7 +126,7 @@ async function handleOcMainWebhook(rawBody, headers) {
 
   rememberDelivery(deliveryId);
   console.log(
-    `dispatched ${trigger.repository}#${trigger.pullNumber} from ${trigger.commentUserLogin || trigger.commentUserId}`,
+    `dispatched ${workerTrigger.repository}#${workerTrigger.pullNumber} from ${workerTrigger.commentUserLogin || workerTrigger.commentUserId}`,
   );
   return { status: 202, body: "queued\n" };
 }

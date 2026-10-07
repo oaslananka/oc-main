@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 import {
+  extractIssueCommentTrigger,
   extractPullRequestTrigger,
   verifyWebhookSignature,
 } from "../src/webhook.mjs";
@@ -33,6 +34,34 @@ test("ignores ordinary issue comments", () => {
     extractPullRequestTrigger("issue_comment", {
       action: "created",
       issue: { number: 7 },
+    }),
+    null,
+  );
+});
+
+test("extracts ordinary issue comments for trusted campaign routing", () => {
+  const trigger = extractIssueCommentTrigger("issue_comment", {
+    action: "created",
+    repository: { full_name: "owner/repo" },
+    installation: { id: 42 },
+    issue: { number: 17 },
+    comment: {
+      id: 101,
+      body: "/oc maintenance remediate current blockers",
+      user: { id: 9, login: "owner" },
+    },
+  });
+  assert.equal(trigger.repository, "owner/repo");
+  assert.equal(trigger.issueNumber, 17);
+  assert.equal(trigger.commentId, 101);
+  assert.equal(trigger.commentUserId, 9);
+});
+
+test("does not classify pull request comments as issue campaign triggers", () => {
+  assert.equal(
+    extractIssueCommentTrigger("issue_comment", {
+      action: "created",
+      issue: { number: 7, pull_request: {} },
     }),
     null,
   );

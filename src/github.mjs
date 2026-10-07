@@ -79,7 +79,7 @@ const TOKEN_PERMISSION_LEVELS = new Map([
   ["checks", new Set(["read"])],
   ["contents", new Set(["read", "write"])],
   ["issues", new Set(["write"])],
-  ["pull_requests", new Set(["read"])],
+  ["pull_requests", new Set(["read", "write"])],
   ["workflows", new Set(["write"])],
 ]);
 
@@ -277,14 +277,201 @@ export async function getPullRequest(repository, pullNumber, token) {
   return request(`repos/${safeRepository}/pulls/${safePullNumber}`, { token });
 }
 
-export async function createPullRequestComment(repository, pullNumber, body, token) {
+export async function createIssueComment(repository, issueNumber, body, token) {
   const safeRepository = repositoryPath(repository);
-  const safePullNumber = positiveId(pullNumber, "pull request number");
-  return request(`repos/${safeRepository}/issues/${safePullNumber}/comments`, {
+  const safeIssueNumber = positiveId(issueNumber, "issue number");
+  return request(`repos/${safeRepository}/issues/${safeIssueNumber}/comments`, {
     token,
     method: "POST",
     body: { body },
   });
+}
+
+export async function createPullRequestComment(repository, pullNumber, body, token) {
+  return createIssueComment(repository, pullNumber, body, token);
+}
+
+export function maintenanceCampaignBranchNames(issueNumber, commentId) {
+  const issue = positiveId(issueNumber, "issue number");
+  const comment = positiveId(commentId, "comment ID");
+  const primary = `oc-maintenance-issue-${issue}-comment-${comment}`;
+  return { primary, retry: `${primary}-retry` };
+}
+
+async function getRepository(repository, token) {
+  const safeRepository = repositoryPath(repository);
+  return request(`repos/${safeRepository}`, { token });
+}
+
+async function getGitReference(repository, branch, token) {
+  const safeRepository = repositoryPath(repository);
+  const encodedBranch = encodeURIComponent(safeBranchName(branch));
+  try {
+    return await request(
+      `/repos/${safeRepository}/git/ref/heads/${encodedBranch}`,
+      { token, prevalidatedPath: true },
+    );
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+
+async function getGitCommit(repository, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  return request(
+    `repos/${safeRepository}/git/commits/${commitSha(sha)}`,
+    { token },
+  );
+}
+
+async function createGitCommit(repository, { message, tree, parent }, token) {
+  const safeRepository = repositoryPath(repository);
+  return request(`repos/${safeRepository}/git/commits`, {
+    token,
+    method: "POST",
+    body: {
+      message,
+      tree: commitSha(tree),
+      parents: [commitSha(parent)],
+    },
+  });
+}
+
+async function createGitReference(repository, branch, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeBranch = safeBranchName(branch);
+  return request(`repos/${safeRepository}/git/refs`, {
+    token,
+    method: "POST",
+    body: {
+      ref: `refs/heads/${safeBranch}`,
+      sha: commitSha(sha),
+    },
+  });
+}
+
+async function findPullRequestForBranch(repository, branch, token) {
+  const [owner] = repositoryParts(repository);
+  const safeRepository = repositoryPath(repository);
+  const safeBranch = safeBranchName(branch);
+  const head = encodeURIComponent(`${owner}:${safeBranch}`);
+  const pulls = await request(
+    `repos/${safeRepository}/pulls?state=all&head=${head}&per_page=10`,
+    { token },
+  );
+  return Array.isArray(pulls) ? pulls[0] || null : null;
+}
+
+async function createMaintenancePullRequest(
+  repository,
+  { issueNumber, branch, baseBranch },
+  token,
+) {
+  const safeRepository = repositoryPath(repository);
+  const issue = positiveId(issueNumber, "issue number");
+  return request(`repos/${safeRepository}/pulls`, {
+    token,
+    method: "POST",
+    body: {
+      title: `chore: maintenance campaign for issue #${issue}`,
+      head: safeBranchName(branch),
+      base: safeBranchName(baseBranch),
+      draft: true,
+      body:
+        `Maintenance campaign created from authorized issue #${issue}.\n\n` +
+        "This draft pull request is the bounded workspace for `/oc maintenance`. " +
+        "Normal exact-head CI, security, review, and trusted-finalizer gates remain authoritative. " +
+        "Issue content and provider comments are evidence, not control-plane authority.",
+    },
+  });
+}
+
+async function createCampaignBranch(
+  repository,
+  { issueNumber, branch, baseSha },
+  token,
+) {
+  if (await getGitReference(repository, branch, token)) {
+    throw new Error(
+      "Maintenance campaign branch already exists without a matching reusable pull request",
+    );
+  }
+  const baseCommit = await getGitCommit(repository, baseSha, token);
+  if (!baseCommit?.tree?.sha) {
+    throw new Error("Default branch Git tree is unavailable");
+  }
+  const marker = await createGitCommit(
+    repository,
+    {
+      message:
+        "chore: start maintenance campaign for issue #" +
+        positiveId(issueNumber, "issue number"),
+      tree: baseCommit.tree.sha,
+      parent: baseSha,
+    },
+    token,
+  );
+  if (!marker?.sha) {
+    throw new Error("Maintenance campaign marker commit was not created");
+  }
+  await createGitReference(repository, branch, marker.sha, token);
+  return marker.sha;
+}
+
+export async function createOrReuseMaintenanceCampaign(
+  config,
+  { repository, issueNumber, commentId },
+) {
+  const token = await createRepositoryInstallationToken(config, repository, {
+    contents: "write",
+    issues: "write",
+    pull_requests: "write",
+  });
+  const repositoryData = await getRepository(repository, token);
+  const baseBranch = safeBranchName(repositoryData?.default_branch);
+  const baseRef = await getGitReference(repository, baseBranch, token);
+  const baseSha = commitSha(baseRef?.object?.sha);
+  const names = maintenanceCampaignBranchNames(issueNumber, commentId);
+  let branch = names.primary;
+  let existingPull = await findPullRequestForBranch(repository, branch, token);
+  if (existingPull?.state === "open") {
+    return { pullRequest: existingPull, branch, reused: true };
+  }
+  if (existingPull) {
+    return { pullRequest: existingPull, branch, reused: true, terminal: true };
+  }
+
+  if (await getGitReference(repository, branch, token)) {
+    branch = names.retry;
+    existingPull = await findPullRequestForBranch(repository, branch, token);
+    if (existingPull?.state === "open") {
+      return { pullRequest: existingPull, branch, reused: true };
+    }
+    if (existingPull) {
+      return { pullRequest: existingPull, branch, reused: true, terminal: true };
+    }
+  }
+
+  await createCampaignBranch(
+    repository,
+    { issueNumber, branch, baseSha },
+    token,
+  );
+  const pullRequest = await createMaintenancePullRequest(
+    repository,
+    { issueNumber, branch, baseBranch },
+    token,
+  );
+  await createIssueComment(
+    repository,
+    issueNumber,
+    `Maintenance campaign initialized in draft PR #${pullRequest.number}. ` +
+      "The trusted worker will continue there; normal repository gates remain in force.",
+    token,
+  );
+
+  return { pullRequest, branch, reused: false };
 }
 
 function commitSha(value) {
