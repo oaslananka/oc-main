@@ -97,6 +97,11 @@ export async function evaluateAutomaticMaintenanceWakeup({
     trigger?.commentUserId,
     "status comment user ID",
   );
+  const wakeupIteration = positiveInteger(
+    trigger?.expectedIteration,
+    "wakeup iteration",
+  );
+  const wakeupHead = exactHead(trigger?.expectedHead, "wakeup head");
 
   const readToken = await createRepositoryInstallationTokenImpl(
     config,
@@ -118,6 +123,12 @@ export async function evaluateAutomaticMaintenanceWakeup({
   const task = automaticTask(beforeState);
   if (!task) {
     return { dispatched: false, reason: "legacy-or-no-auto-task" };
+  }
+  if (
+    beforeState.iteration !== wakeupIteration ||
+    beforeState.expected_head !== wakeupHead
+  ) {
+    return { dispatched: false, reason: "stale-wakeup" };
   }
   if (!config.allowedModels.has(task.model)) {
     return { dispatched: false, reason: "model-not-allowed" };
