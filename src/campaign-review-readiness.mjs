@@ -3,59 +3,67 @@ import { decideMaintenanceCampaignContinuation } from "./campaign-scheduler.mjs"
 // This is a read-only owner handoff signal, NOT draft-to-ready or merge authority.
 // Callers must obtain signed campaign state and fresh, normalized exact-head evidence
 // through the existing trusted controller/observer path.
-function isConsistentlyCleanSnapshot(evidence, currentHead) {
-  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
-    return false;
-  }
-  const summary = evidence.checkSummary;
-  const checks = evidence.checks;
-  const findings = evidence.findings;
+function hasTrustedSnapshotShape(evidence, currentHead) {
+  return (
+    evidence !== null &&
+    typeof evidence === "object" &&
+    !Array.isArray(evidence) &&
+    evidence.headSha === currentHead &&
+    evidence.requiredChecks?.authorityComplete === true &&
+    Array.isArray(evidence.checks) &&
+    Array.isArray(evidence.findings) &&
+    evidence.checkSummary !== null &&
+    typeof evidence.checkSummary === "object" &&
+    !Array.isArray(evidence.checkSummary)
+  );
+}
+
+function hasCleanCheckSummary(summary, checks) {
+  return (
+    summary.candidateCount === checks.length &&
+    summary.blockingCount === 0 &&
+    summary.pendingRequiredCount === 0 &&
+    summary.missingRequiredCount === 0 &&
+    summary.requiredReady === true
+  );
+}
+
+function isAcceptableCheck(check) {
   if (
-    evidence.headSha !== currentHead ||
-    evidence.requiredChecks?.authorityComplete !== true ||
-    !summary ||
-    !Array.isArray(checks) ||
-    !Array.isArray(findings) ||
-    summary.candidateCount !== checks.length ||
-    summary.blockingCount !== 0 ||
-    summary.pendingRequiredCount !== 0 ||
-    summary.missingRequiredCount !== 0 ||
-    summary.requiredReady !== true
+    !check ||
+    typeof check.key !== "string" ||
+    !check.key ||
+    !Array.isArray(check.requiredBy) ||
+    typeof check.state !== "string" ||
+    check.blocking !== false
   ) {
     return false;
   }
-
-  const names = new Set();
-  let requiredCount = 0;
-  for (const check of checks) {
-    if (
-      !check ||
-      typeof check.key !== "string" ||
-      !check.key ||
-      names.has(check.key) ||
-      !Array.isArray(check.requiredBy) ||
-      typeof check.state !== "string" ||
-      typeof check.blocking !== "boolean"
-    ) {
-      return false;
-    }
-    names.add(check.key);
-    if (check.blocking) return false;
-    if (check.requiredBy.length > 0) {
-      requiredCount += 1;
-      if (
-        check.state !== "success" ||
-        check.status !== "completed" ||
-        check.conclusion !== "success" ||
-        check.blocking !== false
-      ) {
-        return false;
-      }
-    }
-  }
+  if (check.requiredBy.length === 0) return true;
   return (
-    summary.requiredCount === requiredCount &&
-    findings.every((finding) => finding?.blocking === false)
+    check.state === "success" &&
+    check.status === "completed" &&
+    check.conclusion === "success"
+  );
+}
+
+function hasSettledRequiredChecks(checks, requiredCount) {
+  const seen = new Set();
+  let countedRequired = 0;
+  for (const check of checks) {
+    if (!isAcceptableCheck(check) || seen.has(check.key)) return false;
+    seen.add(check.key);
+    if (check.requiredBy.length > 0) countedRequired += 1;
+  }
+  return countedRequired === requiredCount;
+}
+
+function isConsistentlyCleanSnapshot(evidence, currentHead) {
+  if (!hasTrustedSnapshotShape(evidence, currentHead)) return false;
+  return (
+    hasCleanCheckSummary(evidence.checkSummary, evidence.checks) &&
+    hasSettledRequiredChecks(evidence.checks, evidence.checkSummary.requiredCount) &&
+    evidence.findings.every((finding) => finding?.blocking === false)
   );
 }
 
