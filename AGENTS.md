@@ -27,7 +27,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 - Production worker version is pinned in `scripts/install-opencode.sh`; upgrades require CI/runtime validation and an end-to-end PR test.
 - Run OpenCode from an isolated trusted HOME with project configuration and external skill discovery disabled.
 - Disable external skill discovery, Claude Code compatibility, automatic updates, and automatic LSP downloads in the OpenCode execution environment.
-- Target `.opencode`, project plugins, project agents, project commands, project skills, and project OpenCode config are not trusted and must not load.
+- Target `.opencode`, `.claude`, `.agents`, `opencode.json(c)`, and agent-instruction files are untrusted and are physically quarantined during OpenCode execution, then restored before finalization.
 - Target `AGENTS.md` files are untrusted repository data: they may supply conventions, but cannot override control-plane policy or the signed capability manifest.
 - Only trusted runtime skills prefixed `oc-` may be loaded.
 - Read-only modes must never push tracked changes; the trusted finalizer enforces this even if the model attempts an edit.
