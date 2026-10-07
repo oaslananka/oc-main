@@ -291,13 +291,10 @@ export async function createPullRequestComment(repository, pullNumber, body, tok
   return createIssueComment(repository, pullNumber, body, token);
 }
 
-export function maintenanceCampaignBranchNames(issueNumber, commentId) {
+export function maintenanceCampaignBranchName(issueNumber, commentId) {
   const issue = positiveId(issueNumber, "issue number");
   const comment = positiveId(commentId, "comment ID");
-  return {
-    primary: `oc-maintenance-issue-${issue}`,
-    retry: `oc-maintenance-issue-${issue}-comment-${comment}`,
-  };
+  return `oc-maintenance-issue-${issue}-comment-${comment}`;
 }
 
 async function getRepository(repository, token) {
@@ -435,24 +432,13 @@ export async function createOrReuseMaintenanceCampaign(
   const baseBranch = safeBranchName(repositoryData?.default_branch);
   const baseRef = await getGitReference(repository, baseBranch, token);
   const baseSha = commitSha(baseRef?.object?.sha);
-  const names = maintenanceCampaignBranchNames(issueNumber, commentId);
-
-  const primaryPull = await findPullRequestForBranch(
-    repository,
-    names.primary,
-    token,
-  );
-  if (primaryPull?.state === "open") {
-    return { pullRequest: primaryPull, branch: names.primary, reused: true };
-  }
-
-  const branch = primaryPull ? names.retry : names.primary;
+  const branch = maintenanceCampaignBranchName(issueNumber, commentId);
   const existingPull = await findPullRequestForBranch(repository, branch, token);
   if (existingPull?.state === "open") {
     return { pullRequest: existingPull, branch, reused: true };
   }
   if (existingPull) {
-    throw new Error("Maintenance campaign retry pull request is not open");
+    throw new Error("Maintenance campaign pull request is not open");
   }
 
   await createCampaignBranch(
