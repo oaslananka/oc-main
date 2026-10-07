@@ -9,7 +9,7 @@
 - Runtime line: OpenCode v2.
 - Production pin: `@opencode/cli@2.0.24`.
 - Installation: exact npm version through `scripts/install-opencode.sh`.
-- Execution: `opencode --pure run --agent <agent> --model <model> <prompt>`.
+- Execution: `opencode run --agent <agent> --model <model> <prompt>`.
 - Session database: in-memory.
 - Auto-update: disabled.
 - Project OpenCode configuration: disabled.
