@@ -22,9 +22,11 @@ if [[ "$resolved" != "/usr/local/bin/opencode" ]]; then
   fi
 fi
 
-actual="$(/usr/local/bin/opencode --version | tr -d "\\r" | tail -n 1)"
+actual_raw="$(/usr/local/bin/opencode --version | tr -d "\\r" | tail -n 1)"
+actual="${actual_raw#opencode v}"
+actual="${actual#v}"
 if [[ "$actual" != "$OPENCODE_VERSION" ]]; then
-  echo "Expected OpenCode ${OPENCODE_VERSION}, got ${actual}" >&2
+  echo "Expected OpenCode ${OPENCODE_VERSION}, got ${actual_raw}" >&2
   exit 1
 fi
 
