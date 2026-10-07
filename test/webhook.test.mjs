@@ -77,7 +77,7 @@ test("extracts only canonical bot edited sticky status wakeups", () => {
     comment: {
       id: 501,
       body:
-        "status\n<!-- oc-main-maintenance-campaign-status:v1 -->",
+        "status\n<!-- oc-main-maintenance-campaign-status:v1 -->\n<!-- oc-main-maintenance-campaign-wakeup:v1:1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->",
       user: {
         id: 900,
         login: "oaslananka-ops[bot]",
@@ -90,6 +90,8 @@ test("extracts only canonical bot edited sticky status wakeups", () => {
   assert.equal(trigger.pullNumber, 17);
   assert.equal(trigger.commentId, 501);
   assert.equal(trigger.commentUserId, 900);
+  assert.equal(trigger.expectedIteration, 1);
+  assert.equal(trigger.expectedHead, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 });
 
 test("ignores created, human, lookalike and unrelated bot status comments", () => {
@@ -99,7 +101,7 @@ test("ignores created, human, lookalike and unrelated bot status comments", () =
     comment: {
       id: 501,
       body:
-        "status\n<!-- oc-main-maintenance-campaign-status:v1 -->",
+        "status\n<!-- oc-main-maintenance-campaign-status:v1 -->\n<!-- oc-main-maintenance-campaign-wakeup:v1:1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->",
       user: {
         id: 900,
         login: "oaslananka-ops[bot]",
@@ -144,6 +146,26 @@ test("ignores created, human, lookalike and unrelated bot status comments", () =
       comment: {
         ...base.comment,
         user: { id: 901, login: "other-bot[bot]", type: "Bot" },
+      },
+    }),
+    null,
+  );
+});
+
+test("ignores canonical bot status edits without ready-remediation wakeup identity", () => {
+  assert.equal(
+    extractCampaignStatusTrigger("issue_comment", {
+      action: "edited",
+      repository: { full_name: "owner/repo" },
+      issue: { number: 17, pull_request: {} },
+      comment: {
+        id: 501,
+        body: "status\n<!-- oc-main-maintenance-campaign-status:v1 -->",
+        user: {
+          id: 900,
+          login: "oaslananka-ops[bot]",
+          type: "Bot",
+        },
       },
     }),
     null,
