@@ -48,7 +48,7 @@ async function execute(agent, prompt, timeoutMs) {
   return cleanOpenCodeOutput(result.stdout);
 }
 
-try {
+async function runTask() {
   quarantineState = await quarantineProjectControls(
     job.repositoryDir,
     quarantineDir,
@@ -107,8 +107,7 @@ try {
         planOutput,
       });
       console.error("OpenCode task incomplete: edit-required mode produced no tracked changes");
-      process.exitCode = 1;
-      return;
+      return false;
     }
   }
 
@@ -118,6 +117,12 @@ try {
     error: "",
     planOutput,
   });
+  return true;
+}
+
+try {
+  const completed = await runTask();
+  if (!completed) process.exitCode = 1;
 } catch (error) {
   const message = errorTail(error?.message || error);
   await writeResult({
