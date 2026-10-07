@@ -33,8 +33,69 @@ async function readBody(request, maxBytes = 2_000_000) {
 }
 
 function respond(response, status, body = "") {
-  response.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
+  response.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
   response.end(body);
+}
+
+async function handleOcMainWebhook(rawBody, headers) {
+  const signature = headers["x-hub-signature-256"];
+  if (!verifyWebhookSignature(rawBody, signature, config.githubWebhookSecret)) {
+    return { status: 401, body: "invalid signature\n" };
+  }
+
+  const deliveryId = headers["x-github-delivery"];
+  if (isDuplicate(deliveryId)) {
+    return { status: 202, body: "duplicate\n" };
+  }
+
+  const eventName = headers["x-github-event"];
+  const payload = JSON.parse(rawBody.toString("utf8"));
+  const trigger = extractPullRequestTrigger(eventName, payload);
+  if (!trigger) {
+    rememberDelivery(deliveryId);
+    return { status: 202, body: "ignored\n" };
+  }
+
+  if (!config.allowedUserIds.has(trigger.commentUserId)) {
+    rememberDelivery(deliveryId);
+    return { status: 202, body: "ignored\n" };
+  }
+
+  const command = parseCommand(trigger.commentBody, config);
+  if (!command) {
+    rememberDelivery(deliveryId);
+    return { status: 202, body: "ignored\n" };
+  }
+
+  if (!trigger.repository || !trigger.pullNumber || !trigger.commentId) {
+    throw new Error("Webhook payload is missing required repository or PR metadata");
+  }
+
+  const job = createSignedJob(
+    trigger,
+    command,
+    config.workerDispatchSecret,
+  );
+
+  await dispatchRepositoryEvent(
+    config,
+    config.controlRepository,
+    config.dispatchEventType,
+    job,
+  );
+
+  rememberDelivery(deliveryId);
+  console.log(
+    `dispatched ${trigger.repository}#${trigger.pullNumber} from ${trigger.commentUserLogin || trigger.commentUserId}`,
+  );
+  return { status: 202, body: "queued\n" };
+}
+
+function isGitHubWebhookPath(url) {
+  return url === config.githubIngressPath || url === config.webhookPath;
 }
 
 const server = http.createServer(async (request, response) => {
@@ -43,69 +104,19 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method !== "POST" || request.url !== config.webhookPath) {
+  if (request.method !== "POST" || !isGitHubWebhookPath(request.url)) {
     respond(response, 404, "not found\n");
     return;
   }
 
   try {
     const rawBody = await readBody(request);
-    const signature = request.headers["x-hub-signature-256"];
-    if (!verifyWebhookSignature(rawBody, signature, config.githubWebhookSecret)) {
-      respond(response, 401, "invalid signature\n");
-      return;
-    }
 
-    const deliveryId = request.headers["x-github-delivery"];
-    if (isDuplicate(deliveryId)) {
-      respond(response, 202, "duplicate\n");
-      return;
-    }
-
-    const eventName = request.headers["x-github-event"];
-    const payload = JSON.parse(rawBody.toString("utf8"));
-    const trigger = extractPullRequestTrigger(eventName, payload);
-    if (!trigger) {
-      rememberDelivery(deliveryId);
-      respond(response, 202, "ignored\n");
-      return;
-    }
-
-    if (!config.allowedUserIds.has(trigger.commentUserId)) {
-      rememberDelivery(deliveryId);
-      respond(response, 202, "ignored\n");
-      return;
-    }
-
-    const command = parseCommand(trigger.commentBody, config);
-    if (!command) {
-      rememberDelivery(deliveryId);
-      respond(response, 202, "ignored\n");
-      return;
-    }
-
-    if (!trigger.repository || !trigger.pullNumber || !trigger.commentId) {
-      throw new Error("Webhook payload is missing required repository or PR metadata");
-    }
-
-    const job = createSignedJob(
-      trigger,
-      command,
-      config.workerDispatchSecret,
-    );
-
-    await dispatchRepositoryEvent(
-      config,
-      config.controlRepository,
-      config.dispatchEventType,
-      job,
-    );
-
-    rememberDelivery(deliveryId);
-    console.log(
-      `dispatched ${trigger.repository}#${trigger.pullNumber} from ${trigger.commentUserLogin || trigger.commentUserId}`,
-    );
-    respond(response, 202, "queued\n");
+    // /github is the stable shared GitHub App ingress. Today it routes to the
+    // oc-main consumer. Future consumers can be added here without changing
+    // the GitHub App webhook URL. The raw body is kept byte-for-byte intact.
+    const result = await handleOcMainWebhook(rawBody, request.headers);
+    respond(response, result.status, result.body);
   } catch (error) {
     console.error("webhook error", error);
     respond(response, 500, "dispatch failed\n");
@@ -114,6 +125,6 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(config.port, "0.0.0.0", () => {
   console.log(
-    `oc-main listening on :${config.port} at ${config.webhookPath}`,
+    `oc-main listening on :${config.port}; ingress=${config.githubIngressPath}; consumer=${config.webhookPath}`,
   );
 });

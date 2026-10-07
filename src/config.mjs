@@ -44,8 +44,8 @@ function privateKey() {
   );
 }
 
-function webhookPath() {
-  const value = process.env.WEBHOOK_PATH?.trim() || "/github/oc-main";
+function safePath(name, fallback) {
+  const value = process.env[name]?.trim() || fallback;
   if (
     !value.startsWith("/") ||
     value.length > 200 ||
@@ -54,7 +54,7 @@ function webhookPath() {
     value.includes("\\") ||
     value.split("/").some((segment) => segment === "." || segment === "..")
   ) {
-    throw new Error("WEBHOOK_PATH must be a safe absolute URL path");
+    throw new Error(`${name} must be a safe absolute URL path`);
   }
   return value;
 }
@@ -82,7 +82,8 @@ export function loadConfig() {
 
   return {
     port: positiveInteger("PORT", 8787),
-    webhookPath: webhookPath(),
+    githubIngressPath: safePath("GITHUB_INGRESS_PATH", "/github"),
+    webhookPath: safePath("WEBHOOK_PATH", "/github/oc-main"),
     githubAppId: required("GITHUB_APP_ID"),
     githubPrivateKey: privateKey(),
     githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),

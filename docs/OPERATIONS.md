@@ -168,7 +168,7 @@ Logs:
 sudo ./scripts/compose.sh logs -f controller
 ```
 
-The public GitHub App webhook terminates at the lightweight `github-router` container on exact path `/github`. The router preserves the raw request body and GitHub headers, then forwards the delivery to `http://controller:8787/github/oc-main`. The controller performs the HMAC and owner-command checks. The router is attached to the existing `oaslananka-frontdoor` network as `oc-main-github-router`; the controller is isolated on the private `backend` network. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service.
+The public GitHub App webhook terminates at the controller's stable `/github` ingress. The same process routes the unchanged raw body to the named `/github/oc-main` consumer, which performs the HMAC and owner-command checks. The container is attached to the existing `oaslananka-frontdoor` network as `oc-main-github-router`. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service.
 
 Stop:
 
@@ -186,7 +186,7 @@ The controller container is intentionally lightweight. It has no OpenCode instal
 
 ## Cloudflare and GitHub App
 
-Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact public path `/github` to `oc-main-github-router:8788`.
+Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact public path `/github` to `oc-main-github-router:8787`.
 
 The GitHub App webhook URL is the stable shared ingress:
 
@@ -194,7 +194,7 @@ The GitHub App webhook URL is the stable shared ingress:
 https://webhook.oaslananka.dev/oaslananka-ops
 ```
 
-The `github-router` is the fan-out point. Today it forwards only to `/github/oc-main`. Future consumers can be added as additional `GITHUB_WEBHOOK_TARGETS` without changing the GitHub App webhook URL. All targets receive the original raw body and GitHub headers so each consumer can verify the GitHub signature independently.
+The `/github` ingress is the stable routing point. Today it routes only to `/github/oc-main`. Future consumers can be added without changing the GitHub App webhook URL; each consumer must receive the original raw body and GitHub headers and verify the GitHub signature independently.
 
 ## GitHub Actions security boundary
 

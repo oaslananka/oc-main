@@ -58,7 +58,8 @@ test(
         const config = loadConfig();
         assert.deepEqual([...config.allowedUserIds], [285490571, 42]);
         assert.equal(config.controlRepository, "owner/oc-main");
-        assert.equal(config.webhookPath, "/oaslananka-ops");
+        assert.equal(config.githubIngressPath, "/github");
+        assert.equal(config.webhookPath, "/github/oc-main");
       },
     );
   },

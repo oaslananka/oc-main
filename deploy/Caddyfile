@@ -1,7 +1,7 @@
 webhook.oaslananka.dev {
 	encode zstd gzip
 
-	@github path /github
+	@github path /github /github/*
 	handle @github {
 		header {
 			X-Content-Type-Options "nosniff"
@@ -9,7 +9,7 @@ webhook.oaslananka.dev {
 			X-Frame-Options "DENY"
 			-Server
 		}
-		reverse_proxy oc-main-github-router:8788
+		reverse_proxy oc-main-github-router:8787
 	}
 
 	handle {

@@ -12,7 +12,7 @@ This repository is the central control plane for an owner-operated GitHub coding
 
 ## Architecture
 
-- The Ubuntu VPS runs the lightweight GitHub ingress router and webhook controller in Docker; HTTPS is handled by the existing shared Caddy edge.
+- The Ubuntu VPS runs one lightweight webhook controller container; that process owns the stable `/github` ingress and routes to the named `/github/oc-main` consumer. HTTPS is handled by the existing shared Caddy edge.
 - The VPS does not run OpenCode workers.
 - Accepted owner commands are signed and sent to this repository with GitHub `repository_dispatch`.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on a GitHub-hosted Ubuntu runner. Do not replace it with the OpenCode GitHub Action.
