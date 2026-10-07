@@ -11,14 +11,10 @@ import {
   quarantineProjectControls,
   restoreProjectControls,
 } from "./quarantine.mjs";
-
-const EDIT_REQUIRED_MODES = new Set([
-  "fix",
-  "apply",
-  "ci",
-  "release",
-  "refactor",
-]);
+import {
+  isBlockedOutput,
+  requiresTrackedChange,
+} from "./task-policy.mjs";
 
 const job = await readJobUnsafe();
 const quarantineDir = path.resolve(".oc-main-job/quarantine");
@@ -29,10 +25,6 @@ function errorTail(value, limit = 8000) {
   if (text.length <= limit) return text;
   return "[error output truncated to final " + limit + " characters]\n" +
     text.slice(-limit);
-}
-
-function isBlocked(output) {
-  return /(^|\n)BLOCKED:\s*\S/i.test(String(output || ""));
 }
 
 async function execute(agent, prompt, timeoutMs) {
@@ -82,12 +74,13 @@ async function runTask() {
     job.opencodeTimeoutMs,
   );
 
-  const requiresEdit =
-    job.allowEdits &&
-    EDIT_REQUIRED_MODES.has(job.mode);
+  const requiresEdit = requiresTrackedChange(
+    job.mode,
+    job.allowEdits,
+  );
 
   if (requiresEdit && !(await hasChanges(job.repositoryDir))) {
-    if (!isBlocked(output)) {
+    if (!isBlockedOutput(output)) {
       output = await execute(
         job.agent,
         buildRetryPrompt(implementationPrompt, output),
@@ -96,7 +89,7 @@ async function runTask() {
     }
 
     if (!(await hasChanges(job.repositoryDir))) {
-      const blocker = isBlocked(output)
+      const blocker = isBlockedOutput(output)
         ? output
         : "No tracked repository changes were produced after two implementation passes.\n\n" +
           (output || "The model produced no final explanation.");
