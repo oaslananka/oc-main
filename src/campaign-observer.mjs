@@ -47,6 +47,34 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+export function campaignObservationStopReason(
+  state,
+  { iteration, commentId } = {},
+) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    throw new TypeError("Observer campaign state must be an object");
+  }
+  const expectedIteration = Number(iteration);
+  const expectedComment = Number(commentId);
+  if (
+    !Number.isSafeInteger(expectedIteration) ||
+    expectedIteration <= 0 ||
+    !Number.isSafeInteger(expectedComment) ||
+    expectedComment <= 0
+  ) {
+    throw new Error("Observer campaign identity is invalid");
+  }
+  if (
+    state.terminal === true ||
+    state.in_flight === true ||
+    Number(state.iteration) !== expectedIteration ||
+    Number(state.last_comment_id) !== expectedComment
+  ) {
+    return "campaign-advanced";
+  }
+  return "";
+}
+
 export async function observeMaintenanceCampaign({
   loadSnapshot,
   updateStatus,
