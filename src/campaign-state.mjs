@@ -64,7 +64,12 @@ function normalizedState(value) {
     throw new Error("Unsupported maintenance campaign state version");
   }
   if (state.in_flight) {
-    if (!state.active_comment_id || !state.started_at) {
+    if (
+      state.iteration === 0 ||
+      state.terminal ||
+      !state.active_comment_id ||
+      !state.started_at
+    ) {
       throw new Error("In-flight maintenance campaign state is incomplete");
     }
   } else if (state.active_comment_id || state.started_at) {
