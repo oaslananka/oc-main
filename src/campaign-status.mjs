@@ -88,6 +88,12 @@ function workerRunLine(workerRunId) {
   return "| Worker run | `" + positiveInteger(workerRunId, "worker run ID") + "` |";
 }
 
+function evidenceFreshness(evidenceHead, expectedHead) {
+  if (!evidenceHead) return "not collected";
+  if (evidenceHead === expectedHead) return "current for expected head";
+  return "stale for expected head";
+}
+
 export function selectMaintenanceCampaignStatusComment(comments) {
   const trusted = (Array.isArray(comments) ? comments : []).filter(
     (comment) =>
@@ -105,11 +111,7 @@ export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, e
   const identity = stateIdentity(state, maxIterations);
   const metrics = normalizedMetrics(evidence);
   const authority = metrics.authorityComplete ? "complete" : "incomplete";
-  const evidenceState = !metrics.evidenceHead
-    ? "not collected"
-    : metrics.evidenceHead === identity.head
-      ? "current for expected head"
-      : "stale for expected head";
+  const evidenceState = evidenceFreshness(metrics.evidenceHead, identity.head);
   const evidenceValue = metrics.evidenceHead
     ? "`" + metrics.evidenceHead.slice(0, 12) + "` — " + evidenceState
     : evidenceState;
