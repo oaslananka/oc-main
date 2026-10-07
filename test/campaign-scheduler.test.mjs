@@ -4,6 +4,8 @@ import { decideMaintenanceCampaignContinuation } from "../src/campaign-scheduler
 
 const HEAD_A = "a".repeat(40);
 const HEAD_B = "b".repeat(40);
+const BASE_A = "c".repeat(40);
+const BASE_B = "d".repeat(40);
 
 function state(overrides = {}) {
   return {
@@ -18,6 +20,7 @@ function state(overrides = {}) {
 function evidence(overrides = {}) {
   return {
     headSha: HEAD_A,
+    baseSha: BASE_A,
     requiredChecks: { authorityComplete: true },
     checkSummary: {
       requiredCount: 2,
@@ -88,6 +91,30 @@ test("rejects stale prepared evidence after the head changes", () => {
   assert.equal(result.action, "refresh-evidence");
   assert.equal(result.reason, "evidence-stale");
   assert.equal(result.requiresEvidenceRefresh, true);
+});
+
+test("rejects prepared evidence collected against a different base commit", () => {
+  const result = decideMaintenanceCampaignContinuation({
+    state: state(),
+    currentHead: HEAD_A,
+    currentBaseSha: BASE_B,
+    maxIterations: 4,
+    evidence: evidence(),
+  });
+  assert.equal(result.action, "refresh-evidence");
+  assert.equal(result.reason, "evidence-base-stale");
+  assert.equal(result.requiresEvidenceRefresh, true);
+});
+
+test("accepts matching exact base evidence", () => {
+  const result = decideMaintenanceCampaignContinuation({
+    state: state(),
+    currentHead: HEAD_A,
+    currentBaseSha: BASE_A,
+    maxIterations: 4,
+    evidence: evidence(),
+  });
+  assert.equal(result.reason, "clean-settled-head");
 });
 
 test("requires owner review when required-check authority is incomplete", () => {
