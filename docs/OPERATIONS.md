@@ -124,9 +124,12 @@ For `maintenance`, prepare builds a structured evidence snapshot before OpenCode
 - candidate/base GitHub check runs and their regression/resolution state;
 - live required-check names when repository rules or branch-protection metadata are readable;
 - additional required check names from the base commit's `.github/maintenance-policy.yml`;
-- normalized/deduplicated analyzer findings, currently with detailed public Codacy findings and provider-aware check evidence for Sonar, Codacy, Semgrep, OSV, CodeQL, Socket, Codecov, Trivy, GitGuardian and npm audit naming families.
+- normalized/deduplicated analyzer findings, currently with detailed public Codacy findings and provider-aware check evidence for Sonar, Codacy, Semgrep, OSV, CodeQL, Socket, Codecov, Trivy, GitGuardian and npm audit naming families;
+- open dependency PR metadata for canonical `dependabot[bot]` / `renovate[bot]` GitHub Bot actors, plus read-only lane suggestions bounded by `campaign.max_dependencies_per_batch`.
 
 The maintenance policy parser accepts only the documented bounded schema. It always requires `required_checks.inherit_from_github: true`; malformed or unsupported policy falls back to built-in defaults. The candidate PR cannot weaken its own evidence policy because the policy is read from the base SHA.
+
+Dependency PR discovery reuses the maintenance prepare token's existing `pull_requests:read` authority and adds no mutation permission. Lookalike users/noncanonical bots are ignored. Titles, labels, package hints and lane proposals are untrusted evidence. The collector never closes, retargets, supersedes, merges, comments on, or cancels dependency work.
 
 For issue-origin campaigns, the controller also reads `campaign.max_iterations` from that base-SHA policy before each dispatch. Campaign state is stored as one hidden HMAC-signed marker in the draft PR body and binds source issue/comment, campaign PR, exact expected head, iteration, terminal/in-flight state, and trigger-comment identity. Prepare verifies the active lease before OpenCode starts. Finalize updates the same signed state after an incomplete/failure/no-change result or after a successful non-force push. Dispatch failures roll back the reservation; a reservation older than 45 minutes can be reclaimed so a controller crash cannot leave the campaign permanently busy. The generated campaign branch prefix is reserved; missing/tampered state on such a branch fails closed. A model-reported `BLOCKED:` result remains evidence/result text and does not itself set trusted terminal state.
 
