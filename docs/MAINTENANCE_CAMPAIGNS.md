@@ -258,7 +258,19 @@ Conservative outcomes are explicit:
 - exhausted/conflicting iteration policy → owner review;
 - clean settled head → owner review.
 
-The sticky renderer understands `waiting-checks`, `ready-remediation`, and `owner-review` phases, but no runtime path emits those scheduler phases automatically yet.
+The sticky renderer understands `waiting-checks`, `ready-remediation`, and `owner-review` phases. Trusted finalizer code now emits those phases through a bounded current-head observer after a campaign iteration completes.
+
+The observer:
+
+- mints a separate installation token with only `administration:read`, `checks:read`, `contents:read`, and `pull_requests:read`;
+- takes one fresh snapshot immediately and at most three more snapshots 20 seconds apart;
+- re-reads the PR head after each evidence collection so a head change fails closed through the decision contract;
+- treats pending required checks as waiting;
+- gives newly missing required checks only the same bounded registration grace, then routes persistent missing checks to owner review;
+- stops immediately on settled owner-review or retry-eligible evidence;
+- updates only the existing sticky status surface.
+
+A `ready-remediation` status is still classification only. The observer never posts a synthetic owner command, calls repository dispatch, starts OpenCode, cancels Actions, mutates dependency PRs, or increments campaign iteration state.
 
 ## Deferred campaign orchestration
 
@@ -266,7 +278,7 @@ The issue-origin initializer is implemented, but the following remain intentiona
 
 - mutating, closing, retargeting, or superseding dependency-bot PRs after the implemented read-only discovery/lane-proposal step;
 - automatically closing superseded dependency PRs;
-- automatically scheduling the next campaign iteration after checks settle;
+- automatically dispatching the next campaign iteration after checks settle;
 - cancelling GitHub Actions runs;
 - changing draft/ready state;
 - merging a maintenance pull request.
