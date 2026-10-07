@@ -335,9 +335,11 @@ async function listIssueComments(repository, issueNumber, token) {
     );
     const pageComments = Array.isArray(rows) ? rows : [];
     comments.push(...pageComments);
-    if (pageComments.length < 100) break;
+    if (pageComments.length < 100) return comments;
   }
-  return comments.slice(0, 300);
+  throw new Error(
+    "Maintenance campaign status comment scan exceeded 300 comments",
+  );
 }
 
 async function updateIssueComment(repository, commentId, body, token) {
