@@ -29,7 +29,21 @@ function exactHead(value, label) {
 }
 
 function shouldContinueObservation(decision) {
-  return decision.action === "hold" || decision.action === "refresh-evidence";
+  return (
+    decision.action === "hold" ||
+    decision.action === "refresh-evidence" ||
+    decision.reason === "required-checks-missing"
+  );
+}
+
+function observedStatusPhase(decision, attempt, maximumAttempts) {
+  if (
+    decision.reason === "required-checks-missing" &&
+    attempt < maximumAttempts
+  ) {
+    return "waiting-checks";
+  }
+  return decision.statusPhase;
 }
 
 async function collectCurrentHeadSnapshot({
@@ -115,7 +129,11 @@ export async function observeMaintenanceCampaignCurrentHead({
       {
         state,
         maxIterations,
-        phase: decision.statusPhase,
+        phase: observedStatusPhase(
+          decision,
+          attempt,
+          maximumAttempts,
+        ),
         evidence: snapshot.evidence,
         workerRunId,
       },
