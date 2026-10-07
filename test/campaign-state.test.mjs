@@ -6,6 +6,7 @@ import {
   beginMaintenanceCampaignIteration,
   completeMaintenanceCampaignIteration,
   createInitialMaintenanceCampaignState,
+  isMaintenanceCampaignBranchName,
   maintenanceCampaignStateMarker,
   readMaintenanceCampaignState,
   writeMaintenanceCampaignState,
@@ -227,4 +228,23 @@ test("expired campaign lease can be safely reclaimed without consuming another s
   assert.equal(recovered.state.iteration, 1);
   assert.equal(recovered.state.active_comment_id, 102);
   assert.equal(recovered.state.in_flight, true);
+});
+
+test("campaign branch identity is exact and reserved", () => {
+  assert.equal(
+    isMaintenanceCampaignBranchName("oc-maintenance-issue-23-comment-101"),
+    true,
+  );
+  assert.equal(
+    isMaintenanceCampaignBranchName("oc-maintenance-issue-23-comment-101-retry"),
+    true,
+  );
+  assert.equal(
+    isMaintenanceCampaignBranchName("feature/oc-maintenance-issue-23-comment-101"),
+    false,
+  );
+  assert.equal(
+    isMaintenanceCampaignBranchName("oc-maintenance-issue-0-comment-101"),
+    false,
+  );
 });
