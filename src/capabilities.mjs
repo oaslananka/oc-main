@@ -11,6 +11,7 @@ const SUPPORTED_MODES = new Set([
   "explain",
   "refactor",
   "ci",
+  "maintenance",
 ]);
 
 const READ_ONLY_MODES = new Set([
@@ -35,6 +36,7 @@ const AGENT_BY_MODE = new Map([
   ["explain", "plan"],
   ["refactor", "build"],
   ["ci", "build"],
+  ["maintenance", "build"],
 ]);
 
 const MODEL_PREFERENCES = new Map([
@@ -46,6 +48,7 @@ const MODEL_PREFERENCES = new Map([
   ["explain", ["opencode/mimo-v2.6-flash-free", "opencode/nemotron-3.5-lightning-free"]],
   ["ci", ["opencode/nemotron-3.5-lightning-free", "opencode/mimo-v2.6-flash-free"]],
   ["test", ["opencode/nemotron-3.5-lightning-free", "opencode/mimo-v2.6-flash-free"]],
+  ["maintenance", ["opencode/nemotron-3-ultra-free", "opencode/nemotron-3.5-lightning-free"]],
 ]);
 
 const HIGH_RISK = /\b(secret|credential|auth|oauth|oidc|permission|workflow|release|publish|deploy|migration|database|schema|infrastructure|infra|docker|security|token|signing|production)\b/i;
@@ -60,7 +63,7 @@ export function supportedModes() {
 
 function classifyRisk(mode, prompt) {
   const text = String(prompt || "");
-  if (mode === "security" || mode === "release") return "high";
+  if (mode === "security" || mode === "release" || mode === "maintenance") return "high";
   if (HIGH_RISK.test(text)) return "high";
   if (["plan", "research", "review", "explain"].includes(mode)) return "low";
   return "medium";
