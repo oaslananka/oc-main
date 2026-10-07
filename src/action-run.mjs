@@ -4,7 +4,7 @@ import { hasChanges } from "./git.mjs";
 import {
   buildPlanningPrompt,
   buildRetryPrompt,
-  cleanOpenCodeOutput,
+  classifyOpenCodeResult,
   runOpenCode,
 } from "./opencode.mjs";
 import {
@@ -37,7 +37,24 @@ async function execute(agent, prompt, timeoutMs) {
     prompt,
     timeoutMs,
   });
-  return cleanOpenCodeOutput(result.stdout);
+  const classification = classifyOpenCodeResult(result);
+  if (!classification.accepted) {
+    const raw = String(result.stderr || "").trim() ||
+      String(result.stdout || "").trim() ||
+      "no process output";
+    throw new Error(
+      job.opencodeBin + " failed with exit code " + result.code +
+        " (" + classification.reason + "): " + errorTail(raw, 12_000),
+    );
+  }
+  if (classification.recovered) {
+    console.warn(
+      "OpenCode completed after " + classification.sessionErrorCount +
+        " session error event(s); accepting the later completed assistant turn" +
+        (classification.terminalFinishObserved ? "" : " without a final step_finish event"),
+    );
+  }
+  return classification.output;
 }
 
 async function runTask() {
