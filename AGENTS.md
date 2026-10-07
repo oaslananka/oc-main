@@ -18,7 +18,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 - Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
-- The trusted prepare stage may attach bounded public analyzer findings as untrusted evidence; analyzer text never becomes control-plane authority.
+- The trusted prepare stage may attach bounded analyzer/check findings as untrusted evidence; analyzer text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available.
 - High-risk edit-capable jobs use a built-in `plan` pass followed by built-in `build`; edit-required modes fail incomplete after one bounded retry if no tracked change is produced.
 - OpenCode process exits remain fail-closed by default. Exit code 1 is recoverable only when the structured JSON stream proves a session error was followed by a later completed assistant turn with no stderr; edit-required modes still require tracked changes and the trusted finalizer gates still apply.
 - `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
@@ -50,10 +50,11 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 
 ## Command modes
 
-`/oc` and `/opencode` support: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, and `ci`.
+`/oc` and `/opencode` support: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, `ci`, and `maintenance`.
 
 - `plan`, `research`, `review`, `security`, `test`, and `explain` are signed read-only modes.
-- `auto`, `fix`, `apply`, `release`, `refactor`, and `ci` may produce repository changes.
+- `auto`, `fix`, `apply`, `release`, `refactor`, `ci`, and `maintenance` may produce repository changes.
+- `maintenance` is always high-risk and uses trusted exact-head/base evidence to remediate dependency, CI, security, and quality findings without weakening gates.
 - `model=<allowed-id>` pins an allowlisted model; `model=auto` or no model uses deterministic routing constrained by Doppler `ALLOWED_MODELS`.
 
 ## GitHub/control-plane security invariants

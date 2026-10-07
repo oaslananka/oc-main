@@ -79,7 +79,23 @@ function positiveId(value, label) {
   return String(numeric);
 }
 
-async function request(pathname, { token, method = "GET", body } = {}) {
+function validatedApiPath(pathname) {
+  const value = String(pathname || "");
+  if (
+    !value.startsWith("/") ||
+    value.includes("\\") ||
+    value.includes("://") ||
+    /[\r\n]/.test(value)
+  ) {
+    throw new Error("Refusing invalid prevalidated GitHub API path");
+  }
+  return value;
+}
+
+async function request(
+  pathname,
+  { token, method = "GET", body, prevalidatedPath = false } = {},
+) {
   const payload = body ? JSON.stringify(body) : null;
   const headers = {
     Accept: "application/vnd.github+json",
@@ -100,7 +116,7 @@ async function request(pathname, { token, method = "GET", body } = {}) {
         protocol: "https:",
         hostname: API_HOSTNAME,
         port: 443,
-        path: apiPath(pathname),
+        path: prevalidatedPath ? validatedApiPath(pathname) : apiPath(pathname),
         method,
         headers,
         timeout: REQUEST_TIMEOUT_MS,
@@ -135,7 +151,9 @@ async function request(pathname, { token, method = "GET", body } = {}) {
               typeof parsed === "object" && parsed?.message
                 ? parsed.message
                 : `GitHub API request failed (${status})`;
-            reject(new Error(message));
+            const error = new Error(message);
+            error.status = status;
+            reject(error);
             return;
           }
 
@@ -213,3 +231,142 @@ export async function createPullRequestComment(repository, pullNumber, body, tok
     body: { body },
   });
 }
+
+function commitSha(value) {
+  const sha = String(value || "").trim();
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("Invalid GitHub commit SHA");
+  return sha.toLowerCase();
+}
+
+function safeBranchName(value) {
+  const branch = String(value || "").trim();
+  const segments = branch.split("/");
+  if (
+    !/^[A-Za-z0-9._/-]{1,200}$/.test(branch) ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.includes("//") ||
+    branch.includes("..") ||
+    branch.includes("@{") ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment.endsWith(".lock"),
+    )
+  ) {
+    throw new Error("Branch name is not supported for required-check discovery");
+  }
+  return branch;
+}
+
+export function requiredChecksApiPaths(repository, branch) {
+  const safeRepository = repositoryPath(repository);
+  const encodedBranch = encodeURIComponent(safeBranchName(branch));
+  return {
+    rules: `/repos/${safeRepository}/rules/branches/${encodedBranch}`,
+    protection:
+      `/repos/${safeRepository}/branches/${encodedBranch}/protection/required_status_checks`,
+  };
+}
+
+export async function listCheckRunsForCommit(repository, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeSha = commitSha(sha);
+  const runs = [];
+  for (let page = 1; page <= 3; page += 1) {
+    const result = await request(
+      `repos/${safeRepository}/commits/${safeSha}/check-runs?per_page=100&page=${page}`,
+      { token },
+    );
+    const pageRuns = Array.isArray(result?.check_runs) ? result.check_runs : [];
+    runs.push(...pageRuns);
+    if (pageRuns.length < 100 || runs.length >= Number(result?.total_count || 0)) break;
+  }
+  return runs.slice(0, 300);
+}
+
+export async function getMaintenancePolicyText(repository, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeSha = commitSha(sha);
+  try {
+    const result = await request(
+      `repos/${safeRepository}/contents/.github/maintenance-policy.yml?ref=${safeSha}`,
+      { token },
+    );
+    if (
+      !result ||
+      Array.isArray(result) ||
+      result.type !== "file" ||
+      result.encoding !== "base64" ||
+      typeof result.content !== "string"
+    ) {
+      throw new Error("Maintenance policy response is not a base64 file");
+    }
+    return Buffer.from(result.content.replace(/\s+/g, ""), "base64").toString("utf8");
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+
+function addRequiredChecksFromRules(names, rules) {
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (rule?.type !== "required_status_checks") continue;
+    for (const check of rule?.parameters?.required_status_checks || []) {
+      const name = String(check?.context || "").trim();
+      if (name) names.add(name);
+    }
+  }
+}
+
+export async function getRequiredStatusCheckNames(repository, branch, token) {
+  const paths = requiredChecksApiPaths(repository, branch);
+  const names = new Set();
+  const sources = [];
+  const warnings = [];
+
+  try {
+    const rules = await request(
+      paths.rules,
+      { token, prevalidatedPath: true },
+    );
+    addRequiredChecksFromRules(names, rules);
+    sources.push("repository-rules");
+  } catch (error) {
+    warnings.push(
+      "Repository rules unavailable: " + String(error?.message || error),
+    );
+  }
+
+  try {
+    const protection = await request(
+      paths.protection,
+      { token, prevalidatedPath: true },
+    );
+    for (const context of protection?.contexts || []) {
+      const name = String(context || "").trim();
+      if (name) names.add(name);
+    }
+    for (const check of protection?.checks || []) {
+      const name = String(check?.context || "").trim();
+      if (name) names.add(name);
+    }
+    sources.push("branch-protection");
+  } catch (error) {
+    if (error?.status !== 404) {
+      warnings.push(
+        "Legacy branch protection required checks unavailable: " +
+          String(error?.message || error),
+      );
+    }
+  }
+
+  return {
+    names: [...names].sort((a, b) => a.localeCompare(b)),
+    sources,
+    warnings,
+  };
+}
+

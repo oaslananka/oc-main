@@ -4,6 +4,7 @@ const EDIT_REQUIRED_MODES = new Set([
   "ci",
   "release",
   "refactor",
+  "maintenance",
 ]);
 
 export function requiresTrackedChange(mode, allowEdits) {

@@ -5,7 +5,7 @@ import { unwrapSignedJob, verifySignedJob } from "./dispatch.mjs";
 import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
 import { buildAgentPrompt } from "./opencode.mjs";
-import { fetchCodacyQualityContext } from "./quality-context.mjs";
+import { fetchCodacyQualityContext, fetchMaintenanceQualityContext } from "./quality-context.mjs";
 import { writeJob } from "./action-state.mjs";
 
 const config = loadConfig();
@@ -40,10 +40,28 @@ const homeDir = path.resolve(".oc-main-job/home");
 await fs.mkdir(".oc-main-job/home/.config", { recursive: true });
 await fs.cp("runtime/opencode", ".oc-main-job/home/.config/opencode", { recursive: true });
 
-const qualityContext = await fetchCodacyQualityContext(
-  payload.repository,
-  payload.pull_number,
-);
+let qualityContext = "";
+let qualityEvidence = null;
+if (payload.mode === "maintenance") {
+  if (!pr.base?.sha || !pr.base?.ref) {
+    throw new Error("Maintenance mode requires an available pull request base");
+  }
+  const collected = await fetchMaintenanceQualityContext({
+    repository: payload.repository,
+    pullNumber: payload.pull_number,
+    baseSha: pr.base.sha,
+    headSha: expectedHead,
+    baseBranch: pr.base.ref,
+    token: baseToken,
+  });
+  qualityContext = collected.text;
+  qualityEvidence = collected.evidence;
+} else {
+  qualityContext = await fetchCodacyQualityContext(
+    payload.repository,
+    payload.pull_number,
+  );
+}
 
 const prompt = buildAgentPrompt({
   repository: payload.repository,
@@ -62,6 +80,7 @@ await writeJob({
   model: payload.model, mode: payload.mode, agent: payload.agent, risk: payload.risk,
   allowEdits: payload.allow_edits, capabilities: payload.capabilities, prompt,
   qualityContext,
+  qualityEvidence,
   headRepository, headBranch, expectedHead, repositoryDir, homeDir, remote,
   opencodeBin: config.opencodeBin, opencodeTimeoutMs: config.opencodeTimeoutMs,
 }, config.workerDispatchSecret);

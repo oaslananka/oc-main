@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   codacyPullRequestIssuesUrl,
   fetchCodacyQualityContext,
+  fetchMaintenanceQualityContext,
   formatCodacyQualityContext,
 } from "../src/quality-context.mjs";
 
@@ -82,3 +83,76 @@ test("fails soft when Codacy context is unavailable", async () => {
     "Codacy context unavailable: HTTP 404.",
   );
 });
+
+test("collects exact-head maintenance checks, base deltas, and base policy", async () => {
+  const checkRunsImpl = async (_repository, sha) => {
+    if (sha === "a".repeat(40)) {
+      return [
+        { name: "build", status: "completed", conclusion: "success", output: {} },
+        {
+          name: "osv-scanner / osv-scan",
+          status: "completed",
+          conclusion: "success",
+          output: {},
+        },
+      ];
+    }
+    return [
+      { name: "build", status: "completed", conclusion: "failure", output: {} },
+      {
+        name: "osv-scanner / osv-scan",
+        status: "completed",
+        conclusion: "success",
+        output: {},
+      },
+    ];
+  };
+
+  const result = await fetchMaintenanceQualityContext(
+    {
+      repository: "owner/repo",
+      pullNumber: 7,
+      baseSha: "a".repeat(40),
+      headSha: "b".repeat(40),
+      baseBranch: "main",
+      token: "test-token",
+    },
+    {
+      checkRunsImpl,
+      requiredChecksImpl: async () => ({
+        names: ["build"],
+        sources: ["repository-rules"],
+        warnings: [],
+      }),
+      policyTextImpl: async () => `
+version: 1
+required_checks:
+  inherit_from_github: true
+  names:
+    - osv-scanner / osv-scan
+analyzers:
+  sonar:
+    policy: advisory
+    block_new:
+      - critical
+`,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return payload;
+        },
+      }),
+    },
+  );
+
+  assert.equal(result.evidence.requiredChecks.authorityComplete, true);
+  assert.equal(result.evidence.checkSummary.requiredCount, 2);
+  const build = result.evidence.checks.find((item) => item.name === "build");
+  assert.equal(build.delta, "new");
+  assert.equal(build.blocking, true);
+  assert.match(result.text, /Candidate head:/);
+  assert.match(result.text, /Required-check authority: repository-rules/);
+  assert.match(result.text, /BLOCKING/);
+});
+
