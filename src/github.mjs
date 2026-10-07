@@ -135,7 +135,9 @@ async function request(pathname, { token, method = "GET", body } = {}) {
               typeof parsed === "object" && parsed?.message
                 ? parsed.message
                 : `GitHub API request failed (${status})`;
-            reject(new Error(message));
+            const error = new Error(message);
+            error.status = status;
+            reject(error);
             return;
           }
 
@@ -213,3 +215,116 @@ export async function createPullRequestComment(repository, pullNumber, body, tok
     body: { body },
   });
 }
+
+function commitSha(value) {
+  const sha = String(value || "").trim();
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("Invalid GitHub commit SHA");
+  return sha.toLowerCase();
+}
+
+function simpleBranchName(value) {
+  const branch = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]{1,200}$/.test(branch)) {
+    throw new Error("Branch name is not supported for required-check discovery");
+  }
+  return branch;
+}
+
+export async function listCheckRunsForCommit(repository, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeSha = commitSha(sha);
+  const runs = [];
+  for (let page = 1; page <= 3; page += 1) {
+    const result = await request(
+      `repos/${safeRepository}/commits/${safeSha}/check-runs?per_page=100&page=${page}`,
+      { token },
+    );
+    const pageRuns = Array.isArray(result?.check_runs) ? result.check_runs : [];
+    runs.push(...pageRuns);
+    if (pageRuns.length < 100 || runs.length >= Number(result?.total_count || 0)) break;
+  }
+  return runs.slice(0, 300);
+}
+
+export async function getMaintenancePolicyText(repository, sha, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeSha = commitSha(sha);
+  try {
+    const result = await request(
+      `repos/${safeRepository}/contents/.github/maintenance-policy.yml?ref=${safeSha}`,
+      { token },
+    );
+    if (
+      !result ||
+      Array.isArray(result) ||
+      result.type !== "file" ||
+      result.encoding !== "base64" ||
+      typeof result.content !== "string"
+    ) {
+      throw new Error("Maintenance policy response is not a base64 file");
+    }
+    return Buffer.from(result.content.replace(/\\n/g, ""), "base64").toString("utf8");
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+
+function addRequiredChecksFromRules(names, rules) {
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (rule?.type !== "required_status_checks") continue;
+    for (const check of rule?.parameters?.required_status_checks || []) {
+      const name = String(check?.context || "").trim();
+      if (name) names.add(name);
+    }
+  }
+}
+
+export async function getRequiredStatusCheckNames(repository, branch, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeBranch = simpleBranchName(branch);
+  const names = new Set();
+  const sources = [];
+  const warnings = [];
+
+  try {
+    const rules = await request(
+      `repos/${safeRepository}/rules/branches/${encodeURIComponent(safeBranch)}`,
+      { token },
+    );
+    addRequiredChecksFromRules(names, rules);
+    sources.push("repository-rules");
+  } catch (error) {
+    warnings.push(
+      "Repository rules unavailable: " + String(error?.message || error),
+    );
+  }
+
+  try {
+    const protection = await request(
+      `repos/${safeRepository}/branches/${encodeURIComponent(safeBranch)}/protection/required_status_checks`,
+      { token },
+    );
+    for (const context of protection?.contexts || []) {
+      const name = String(context || "").trim();
+      if (name) names.add(name);
+    }
+    for (const check of protection?.checks || []) {
+      const name = String(check?.context || "").trim();
+      if (name) names.add(name);
+    }
+    sources.push("branch-protection");
+  } catch (error) {
+    warnings.push(
+      "Legacy branch protection required checks unavailable: " +
+        String(error?.message || error),
+    );
+  }
+
+  return {
+    names: [...names].sort(),
+    sources,
+    warnings,
+  };
+}
+
