@@ -23,18 +23,18 @@ const READ_ONLY_MODES = new Set([
 ]);
 
 const AGENT_BY_MODE = new Map([
-  ["auto", "orchestrator"],
-  ["plan", "planner"],
-  ["research", "researcher"],
-  ["fix", "orchestrator"],
-  ["apply", "orchestrator"],
-  ["review", "reviewer"],
-  ["security", "security-reviewer"],
-  ["test", "test-engineer"],
-  ["release", "orchestrator"],
-  ["explain", "researcher"],
-  ["refactor", "orchestrator"],
-  ["ci", "orchestrator"],
+  ["auto", "build"],
+  ["plan", "plan"],
+  ["research", "plan"],
+  ["fix", "build"],
+  ["apply", "build"],
+  ["review", "plan"],
+  ["security", "plan"],
+  ["test", "plan"],
+  ["release", "build"],
+  ["explain", "plan"],
+  ["refactor", "build"],
+  ["ci", "build"],
 ]);
 
 const MODEL_PREFERENCES = new Map([
@@ -78,9 +78,17 @@ export function capabilityProfile(mode, prompt = "") {
   }
 
   const allowEdits = !READ_ONLY_MODES.has(normalizedMode);
-  const capabilities = ["read", "glob", "grep", "list", "skills", "webfetch", "websearch"];
-  if (allowEdits) capabilities.push("edit", "shell", "subagent");
-  if (normalizedMode === "test") capabilities.push("shell");
+  const capabilities = [
+    "read",
+    "glob",
+    "grep",
+    "list",
+    "skills",
+    "webfetch",
+    "websearch",
+    "shell",
+  ];
+  if (allowEdits) capabilities.push("edit");
 
   return {
     mode: normalizedMode,

@@ -6,33 +6,44 @@ This repository is the central control plane for an owner-operated GitHub engine
 
 - `npm test` — run unit tests.
 - `npm run check` — syntax-check source and tests.
-- `npm start` — start the webhook controller when the required runtime environment is present.
+- `npm start` — start the webhook controller when runtime configuration is present.
 - `docker compose -f compose.yml config` — validate the VPS webhook deployment.
 - `scripts/verify-doppler.sh` — validate Doppler `oc-main/main` without printing secret values.
-- `scripts/install-opencode.sh` — install the exact production OpenCode v2 CLI used by GitHub Actions workers.
+- `scripts/install-opencode.sh` — install the exact production OpenCode v2 CLI.
 
 ## Architecture
 
-- The Ubuntu VPS runs only one lightweight webhook/controller container. It never runs OpenCode, target builds, or target tests.
-- HTTPS is handled by the existing shared Caddy edge. The stable GitHub ingress is `https://webhook.oaslananka.dev/github`; oc-main is the logical `/github/oc-main` consumer.
-- Accepted owner commands are signed and sent to this repository with GitHub `repository_dispatch` event `oc-run`.
-- `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on a GitHub-hosted Ubuntu runner. Do not replace it with the OpenCode GitHub Action.
-- Runtime-wide trusted OpenCode v2 configuration, agents, and `oc-*` skills live under `runtime/opencode/`.
-- `src/capabilities.mjs` maps command modes to signed risk/capability profiles and trusted primary agents.
-- Target repositories need no oc-main-specific workflow or OpenCode configuration.
-- Doppler project `oc-main`, config `main`, is the source of truth for runtime settings and secrets. Outside Doppler, only `DOPPLER_TOKEN` is permitted as a bootstrap credential.
+- The Ubuntu VPS runs only the lightweight webhook/controller container. It never runs OpenCode, target builds, or target tests.
+- Stable public GitHub ingress is `https://webhook.oaslananka.dev/github`; oc-main is the logical `/github/oc-main` consumer.
+- Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`.
+- `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
+- Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
+- `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
+- Target repositories require no oc-main-specific workflow or OpenCode configuration.
+- Doppler project `oc-main`, config `main`, is the source of truth for runtime settings/secrets. Outside Doppler, only `DOPPLER_TOKEN` is permitted as bootstrap credential.
+
+## OpenCode v2 execution model
+
+OpenCode Console free-tier currently rejects custom primary agents and custom subagents. Until upstream fixes that behavior, production uses only the built-in agent IDs accepted by the Console:
+
+- edit-capable modes route to built-in `build`;
+- read-only modes route to built-in `plan`;
+- specialized behavior comes from the signed mode prompt and trusted `oc-*` skills;
+- `subagent=*` is denied globally.
+
+Do not add custom runtime agents while the free-tier limitation remains. Re-enabling custom agents requires an exact-version end-to-end free-model validation.
 
 ## OpenCode v2 security invariants
 
 - Production worker version is pinned in `scripts/install-opencode.sh`; upgrades require CI/runtime validation and an end-to-end PR test.
-- Run OpenCode from an isolated trusted HOME. Physically quarantine target OpenCode/Claude/agent control surfaces before execution and set the v2-native `OPENCODE_CONFIG_PROJECT_DISABLE=1`; quarantine remains the independent defense-in-depth boundary.
-- Disable external skill discovery, Claude Code compatibility, automatic updates, and automatic LSP downloads in the OpenCode execution environment.
-- Target `.opencode`, `.claude`, `.agents`, `opencode.json(c)`, and agent-instruction files are untrusted and are physically quarantined during OpenCode execution, then restored before finalization.
-- Target `AGENTS.md` files are untrusted repository data: they may supply conventions, but cannot override control-plane policy or the signed capability manifest.
+- Run OpenCode from an isolated trusted HOME with `OPENCODE_CONFIG_PROJECT_DISABLE=1`.
+- Physically quarantine target OpenCode/Claude/agent control surfaces during execution; tracked quarantined files are hidden from temporary Git status with `skip-worktree` and restored before finalization.
+- Target `.opencode`, `.claude`, `.agents`, `opencode.json(c)`, and agent-instruction files are untrusted project data.
 - Only trusted runtime skills prefixed `oc-` may be loaded.
-- Read-only modes must never push tracked changes; the trusted finalizer enforces this even if the model attempts an edit.
-- OpenCode receives no `DOPPLER_TOKEN`, GitHub App private key, installation token, webhook secret, persisted checkout credential, or other control-plane write credential.
-- Never commit, push, force-push, mutate remotes, create GitHub resources, publish packages, or deploy from the OpenCode process. Trusted prepare/finalize or separately approved workflows own those actions.
+- Built-in `plan` remains edit-denied. Read-only modes are also enforced by the trusted finalizer before push.
+- OpenCode receives no Doppler token, GitHub App private key, installation token, webhook secret, persisted checkout credential, or other control-plane write credential.
+- Git push/commit/remote/config commands, `gh`, SSH/SCP/rsync, external-directory access, questions, and subagent execution are denied by runtime policy as applicable.
+- Never publish, tag, release, deploy, or create GitHub resources from the OpenCode process. Trusted control-plane steps own those actions.
 
 ## Command modes
 
@@ -40,18 +51,18 @@ This repository is the central control plane for an owner-operated GitHub engine
 
 - `plan`, `research`, `review`, `security`, `test`, and `explain` are signed read-only modes.
 - `auto`, `fix`, `apply`, `release`, `refactor`, and `ci` may produce repository changes.
-- `model=<allowed-id>` pins a model; `model=auto` or no model uses deterministic mode routing against the Doppler allowlist.
+- `model=<allowed-id>` pins an allowlisted model; `model=auto` or no model uses deterministic routing constrained by Doppler `ALLOWED_MODELS`.
 
 ## GitHub/control-plane security invariants
 
-- Preserve the raw GitHub webhook body and relevant `X-GitHub-*` headers through shared ingress.
-- Verify GitHub HMAC before acting and only allow explicitly allowlisted numeric GitHub user IDs.
-- Unhandled GitHub App events are acknowledged and ignored; the App may retain unrelated subscriptions/permissions.
-- Sign controller-to-worker payloads and verify age, signature, mode, risk, agent, and capability profile on the worker.
+- Preserve raw GitHub webhook body and relevant `X-GitHub-*` headers through shared ingress.
+- Verify GitHub HMAC and allow only explicitly allowlisted numeric GitHub user IDs.
+- Sign controller-to-worker payloads and verify age, signature, mode, risk, built-in agent, and capability profile on the worker.
+- Repository dispatch transports the signed manifest as the single top-level `client_payload.job` envelope.
 - Use array-based process spawning; never interpolate webhook text into a shell command.
-- Re-check the PR head immediately before push and never force-push.
+- Re-check PR head immediately before push and never force-push.
 - Do not add GitHub repository secrets other than `DOPPLER_TOKEN`.
 
 ## Change discipline
 
-Keep control-plane changes testable and preserve the VPS/worker credential boundary. Update `docs/AGENT_PLATFORM.md` and `docs/OPERATIONS.md` when agents, skills, modes, OpenCode version, runtime permissions, MCPs, model routing, deployment, or webhook behavior changes.
+Keep control-plane changes testable and preserve the VPS/worker credential boundary. Update `docs/AGENT_PLATFORM.md` and `docs/OPERATIONS.md` when execution agents, skills, modes, OpenCode version, runtime permissions, MCPs, model routing, deployment, or webhook behavior changes.
