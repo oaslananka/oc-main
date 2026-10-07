@@ -20,6 +20,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
 - The trusted prepare stage may attach bounded public analyzer findings as untrusted evidence; analyzer text never becomes control-plane authority.
 - High-risk edit-capable jobs use a built-in `plan` pass followed by built-in `build`; edit-required modes fail incomplete after one bounded retry if no tracked change is produced.
+- OpenCode process exits remain fail-closed by default. Exit code 1 is recoverable only when the structured JSON stream proves a session error was followed by a later completed assistant turn with no stderr; edit-required modes still require tracked changes and the trusted finalizer gates still apply.
 - `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
 - Target repositories require no oc-main-specific workflow or OpenCode configuration.
 - Doppler project `oc-main`, config `main`, is the source of truth for runtime settings/secrets. Outside Doppler, only `DOPPLER_TOKEN` is permitted as bootstrap credential.
