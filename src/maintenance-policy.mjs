@@ -31,6 +31,17 @@ const SEVERITIES = new Set([
   "unknown",
 ]);
 
+const TOP_LEVEL_SECTIONS = new Set([
+  "campaign",
+  "required_checks",
+  "analyzers",
+]);
+
+const CAMPAIGN_KEYS = new Set([
+  "max_iterations",
+  "max_dependencies_per_batch",
+]);
+
 export const DEFAULT_MAINTENANCE_POLICY = Object.freeze({
   version: 1,
   campaign: Object.freeze({
@@ -56,13 +67,13 @@ export const DEFAULT_MAINTENANCE_POLICY = Object.freeze({
 });
 
 function cloneDefaults() {
-  return JSON.parse(JSON.stringify(DEFAULT_MAINTENANCE_POLICY));
+  return structuredClone(DEFAULT_MAINTENANCE_POLICY);
 }
 
 function scalar(raw, lineNumber) {
   const value = raw.trim();
   if (!value) throw new Error("Missing maintenance policy value on line " + lineNumber);
-  if (/^[&*!{}\[\]|>]$/.test(value[0])) {
+  if ("&*!{}[]|>".includes(value[0])) {
     throw new Error("Unsupported YAML feature on line " + lineNumber);
   }
   if (
@@ -114,123 +125,145 @@ function checkedStringList(values, name, { maxItems = 50, severities = false } =
   return [...new Set(result)];
 }
 
-export function parseMaintenancePolicy(text) {
-  const source = String(text ?? "");
-  if (Buffer.byteLength(source, "utf8") > MAX_POLICY_BYTES) {
-    throw new Error("Maintenance policy exceeds 32768 bytes");
-  }
-
-  const parsed = {
+function createParsedPolicy() {
+  return {
     version: null,
     campaign: {},
     required_checks: { names: [] },
     analyzers: {},
   };
+}
 
-  let section = null;
-  let analyzer = null;
-  let listTarget = null;
+function parseLineShape(raw, lineNumber) {
+  if (!raw.trim() || raw.trimStart().startsWith("#")) return null;
+  if (raw.includes("\t")) throw new Error("Tabs are not supported in maintenance policy");
+  const indent = raw.length - raw.trimStart().length;
+  if (indent % 2 !== 0 || indent > 6) {
+    throw new Error("Maintenance policy indentation must use two spaces on line " + lineNumber);
+  }
+  return { indent, trimmed: raw.trim() };
+}
 
+function handleListItem(state, trimmed, lineNumber) {
+  if (!trimmed.startsWith("- ")) return false;
+  if (!state.listTarget) throw new Error("Unexpected list item on line " + lineNumber);
+  state.listTarget.push(scalar(trimmed.slice(2), lineNumber));
+  return true;
+}
+
+function handleTopLevel(parsed, state, trimmed, lineNumber) {
+  const [key, value] = keyValue(trimmed, lineNumber);
+  state.analyzer = null;
+  state.listTarget = null;
+  if (key === "version") {
+    parsed.version = scalar(value, lineNumber);
+    state.section = null;
+    return;
+  }
+  if (!TOP_LEVEL_SECTIONS.has(key) || value) {
+    throw new Error("Unsupported top-level maintenance policy key on line " + lineNumber);
+  }
+  state.section = key;
+}
+
+function handleCampaign(parsed, state, indent, trimmed, lineNumber) {
+  state.listTarget = null;
+  if (indent !== 2) throw new Error("Invalid campaign indentation on line " + lineNumber);
+  const [key, value] = keyValue(trimmed, lineNumber);
+  if (!CAMPAIGN_KEYS.has(key)) throw new Error("Unsupported campaign key: " + key);
+  parsed.campaign[key] = scalar(value, lineNumber);
+}
+
+function handleRequiredChecks(parsed, state, indent, trimmed, lineNumber) {
+  if (indent !== 2) {
+    throw new Error(
+      indent === 4
+        ? "Required check list items must start with '- '"
+        : "Invalid required_checks indentation on line " + lineNumber,
+    );
+  }
+
+  const [key, value] = keyValue(trimmed, lineNumber);
+  if (key === "inherit_from_github") {
+    state.listTarget = null;
+    parsed.required_checks.inherit_from_github = scalar(value, lineNumber);
+    return;
+  }
+  if (key === "names" && !value) {
+    state.listTarget = parsed.required_checks.names;
+    return;
+  }
+  throw new Error("Unsupported required_checks key: " + key);
+}
+
+function handleAnalyzerSection(parsed, state, indent, trimmed, lineNumber) {
+  if (indent === 2) {
+    const [key, value] = keyValue(trimmed, lineNumber);
+    if (value || !ANALYZER_NAMES.has(key)) {
+      throw new Error("Unsupported analyzer policy: " + key);
+    }
+    state.analyzer = key;
+    state.listTarget = null;
+    parsed.analyzers[key] = { block_new: [] };
+    return;
+  }
+
+  if (indent !== 4 || !state.analyzer) {
+    throw new Error(
+      indent === 6
+        ? "Analyzer list items must start with '- '"
+        : "Invalid analyzers indentation on line " + lineNumber,
+    );
+  }
+
+  const [key, value] = keyValue(trimmed, lineNumber);
+  if (key === "policy") {
+    state.listTarget = null;
+    parsed.analyzers[state.analyzer].policy = scalar(value, lineNumber);
+    return;
+  }
+  if (key === "block_new" && !value) {
+    state.listTarget = parsed.analyzers[state.analyzer].block_new;
+    return;
+  }
+  throw new Error("Unsupported analyzer key: " + key);
+}
+
+function handleNestedLine(parsed, state, shape, lineNumber) {
+  if (!state.section) {
+    throw new Error("Nested maintenance policy value without section on line " + lineNumber);
+  }
+  if (state.section === "campaign") {
+    handleCampaign(parsed, state, shape.indent, shape.trimmed, lineNumber);
+    return;
+  }
+  if (state.section === "required_checks") {
+    handleRequiredChecks(parsed, state, shape.indent, shape.trimmed, lineNumber);
+    return;
+  }
+  handleAnalyzerSection(parsed, state, shape.indent, shape.trimmed, lineNumber);
+}
+
+function parsePolicyDocument(source) {
+  const parsed = createParsedPolicy();
+  const state = { section: null, analyzer: null, listTarget: null };
   const lines = source.split(/\r?\n/);
+
   for (let index = 0; index < lines.length; index += 1) {
     const lineNumber = index + 1;
-    const raw = lines[index];
-    if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
-    if (raw.includes("\t")) throw new Error("Tabs are not supported in maintenance policy");
-    const indent = raw.length - raw.trimStart().length;
-    if (indent % 2 !== 0 || indent > 6) {
-      throw new Error("Maintenance policy indentation must use two spaces on line " + lineNumber);
-    }
-    const trimmed = raw.trim();
-
-    if (trimmed.startsWith("- ")) {
-      if (!listTarget) throw new Error("Unexpected list item on line " + lineNumber);
-      const value = scalar(trimmed.slice(2), lineNumber);
-      listTarget.push(value);
+    const shape = parseLineShape(lines[index], lineNumber);
+    if (!shape) continue;
+    if (handleListItem(state, shape.trimmed, lineNumber)) continue;
+    if (shape.indent === 0) {
+      handleTopLevel(parsed, state, shape.trimmed, lineNumber);
       continue;
     }
-    listTarget = null;
-
-    if (indent === 0) {
-      const [key, value] = keyValue(trimmed, lineNumber);
-      analyzer = null;
-      if (key === "version") {
-        parsed.version = scalar(value, lineNumber);
-        section = null;
-        continue;
-      }
-      if (!["campaign", "required_checks", "analyzers"].includes(key) || value) {
-        throw new Error("Unsupported top-level maintenance policy key on line " + lineNumber);
-      }
-      section = key;
-      continue;
-    }
-
-    if (!section) throw new Error("Nested maintenance policy value without section on line " + lineNumber);
-
-    if (section === "campaign") {
-      if (indent !== 2) throw new Error("Invalid campaign indentation on line " + lineNumber);
-      const [key, value] = keyValue(trimmed, lineNumber);
-      if (!["max_iterations", "max_dependencies_per_batch"].includes(key)) {
-        throw new Error("Unsupported campaign key: " + key);
-      }
-      parsed.campaign[key] = scalar(value, lineNumber);
-      continue;
-    }
-
-    if (section === "required_checks") {
-      if (indent === 2) {
-        const [key, value] = keyValue(trimmed, lineNumber);
-        if (key === "inherit_from_github") {
-          parsed.required_checks.inherit_from_github = scalar(value, lineNumber);
-          continue;
-        }
-        if (key === "names" && !value) {
-          listTarget = parsed.required_checks.names;
-          continue;
-        }
-        throw new Error("Unsupported required_checks key: " + key);
-      }
-      if (indent === 4 && parsed.required_checks.names) {
-        throw new Error("Required check list items must start with '- '");
-      }
-      throw new Error("Invalid required_checks indentation on line " + lineNumber);
-    }
-
-    if (section === "analyzers") {
-      if (indent === 2) {
-        const [key, value] = keyValue(trimmed, lineNumber);
-        if (value || !ANALYZER_NAMES.has(key)) {
-          throw new Error("Unsupported analyzer policy: " + key);
-        }
-        analyzer = key;
-        parsed.analyzers[analyzer] = { block_new: [] };
-        continue;
-      }
-      if (indent === 4 && analyzer) {
-        const [key, value] = keyValue(trimmed, lineNumber);
-        if (key === "policy") {
-          parsed.analyzers[analyzer].policy = scalar(value, lineNumber);
-          continue;
-        }
-        if (key === "block_new" && !value) {
-          listTarget = parsed.analyzers[analyzer].block_new;
-          continue;
-        }
-        throw new Error("Unsupported analyzer key: " + key);
-      }
-      if (indent === 6 && analyzer) {
-        throw new Error("Analyzer list items must start with '- '");
-      }
-      throw new Error("Invalid analyzers indentation on line " + lineNumber);
-    }
+    handleNestedLine(parsed, state, shape, lineNumber);
   }
+  return parsed;
+}
 
-  if (parsed.version !== 1) {
-    throw new Error("Maintenance policy version must be 1");
-  }
-
-  const policy = cloneDefaults();
+function applyCampaignPolicy(policy, parsed) {
   policy.campaign.max_iterations = checkedInteger(
     parsed.campaign.max_iterations ?? policy.campaign.max_iterations,
     "campaign.max_iterations",
@@ -243,7 +276,9 @@ export function parseMaintenancePolicy(text) {
     1,
     20,
   );
+}
 
+function applyRequiredChecksPolicy(policy, parsed) {
   const inherit = parsed.required_checks.inherit_from_github ?? true;
   if (inherit !== true) {
     throw new Error("required_checks.inherit_from_github must remain true");
@@ -253,26 +288,45 @@ export function parseMaintenancePolicy(text) {
     parsed.required_checks.names,
     "required_checks.names",
   );
+}
 
+function applyAnalyzerPolicies(policy, parsed) {
   for (const [name, override] of Object.entries(parsed.analyzers)) {
-    if (!ANALYZER_NAMES.has(name)) throw new Error("Unsupported analyzer: " + name);
+    const analyzer = policy.analyzers[name];
     if (override.policy !== undefined) {
       const value = String(override.policy).toLowerCase();
       if (!ANALYZER_POLICIES.has(value)) {
         throw new Error("Unsupported analyzer policy for " + name + ": " + value);
       }
-      policy.analyzers[name].policy = value;
+      analyzer.policy = value;
     }
     if (override.block_new.length) {
-      policy.analyzers[name].block_new = checkedStringList(
+      analyzer.block_new = checkedStringList(
         override.block_new,
         "analyzers." + name + ".block_new",
         { severities: true, maxItems: 8 },
       );
     }
   }
+}
 
+function validateParsedPolicy(parsed) {
+  if (parsed.version !== 1) {
+    throw new Error("Maintenance policy version must be 1");
+  }
+  const policy = cloneDefaults();
+  applyCampaignPolicy(policy, parsed);
+  applyRequiredChecksPolicy(policy, parsed);
+  applyAnalyzerPolicies(policy, parsed);
   return policy;
+}
+
+export function parseMaintenancePolicy(text) {
+  const source = String(text ?? "");
+  if (Buffer.byteLength(source, "utf8") > MAX_POLICY_BYTES) {
+    throw new Error("Maintenance policy exceeds 32768 bytes");
+  }
+  return validateParsedPolicy(parsePolicyDocument(source));
 }
 
 export function resolveMaintenancePolicy(text, source = "builtin-default") {
