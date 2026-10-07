@@ -1,4 +1,5 @@
 import { decideMaintenanceCampaignContinuation } from "./campaign-scheduler.mjs";
+import { classifyMaintenanceCampaignReviewReadiness } from "./campaign-review-readiness.mjs";
 import { readMaintenanceCampaignState } from "./campaign-state.mjs";
 import {
   getPullRequest,
@@ -86,14 +87,19 @@ function shouldContinueObservation(decision) {
   );
 }
 
-function observedStatusPhase(decision, attempt, maximumAttempts) {
+function observedStatusPhase(decision, attempt, maximumAttempts, reviewInput) {
   if (
     decision.reason === "required-checks-missing" &&
     attempt < maximumAttempts
   ) {
     return "waiting-checks";
   }
-  return decision.statusPhase;
+  if (decision.statusPhase !== "owner-review") return decision.statusPhase;
+  // Display-only handoff; the scheduler remains the only dispatch classifier.
+  const readiness = classifyMaintenanceCampaignReviewReadiness(reviewInput);
+  return readiness?.ownerReviewReady === true
+    ? "owner-review-ready"
+    : "owner-review";
 }
 
 async function collectCurrentHeadSnapshot({
@@ -221,6 +227,12 @@ export async function observeMaintenanceCampaignCurrentHead({
           decision,
           attempt,
           maximumAttempts,
+          {
+            state,
+            currentHead: snapshot.currentHead,
+            maxIterations,
+            evidence: snapshot.evidence,
+          },
         ),
         evidence: snapshot.evidence,
         workerRunId,
