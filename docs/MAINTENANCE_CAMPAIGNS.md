@@ -19,7 +19,7 @@ DISCOVER
   -> READY
 ```
 
-The current implementation includes the evidence/policy engine plus a bounded issue-origin initializer. An allowlisted owner can start `/oc maintenance` from an ordinary issue; trusted controller code creates a dedicated source-comment-bound branch and draft PR, then reuses the existing PR evidence/worker/finalizer path. Dependency-PR supersession, bounded multi-iteration orchestration, automatic ready/merge transitions, and optional workflow cancellation remain deferred.
+The current implementation includes the evidence/policy engine, the issue-origin initializer, and bounded signed campaign state. An allowlisted owner can start `/oc maintenance` from an ordinary issue; trusted controller code creates a dedicated source-comment-bound branch and draft PR, persists signed iteration/head state in that PR, and then reuses the existing PR evidence/worker/finalizer path. Dependency-PR supersession, automatic iteration scheduling, automatic ready/merge transitions, and optional workflow cancellation remain deferred.
 
 ## Authority model
 
@@ -58,6 +58,24 @@ Examples:
 ```
 
 On an ordinary issue, no other `/oc` mode is accepted. The initializer does not treat the issue body as trusted instructions. It creates an empty marker commit on a branch bound to the source issue/comment identity, opens a draft PR against the repository default branch, comments the issue with the PR number, and dispatches the normal signed PR worker flow. Webhook redelivery can reuse the same open source-comment-bound PR.
+
+## Signed campaign state and bounded iterations
+
+Each issue-origin campaign draft PR contains one hidden HMAC-signed state marker owned by trusted oc-main code. The visible PR body remains ordinary operator-facing text; the hidden marker records:
+
+- source issue and original source-comment identity;
+- campaign PR number;
+- exact expected PR head;
+- current completed/reserved iteration count;
+- terminal state;
+- active and last trigger-comment identities;
+- reservation start time.
+
+The controller reads `campaign.max_iterations` from the current PR base SHA before every campaign dispatch. It refuses a stale expected head, a terminal campaign, a duplicate completed comment, a concurrent in-flight iteration, or an exhausted iteration budget. A dispatch reservation is rolled back when repository dispatch itself fails. Reservations older than 45 minutes may be reclaimed without consuming an extra iteration slot; any older worker that later starts will fail the prepare lease check because its active comment identity is no longer current.
+
+Trusted prepare re-verifies the signed state and exact head before OpenCode starts. Trusted finalization re-verifies the same iteration/comment/head state and updates the marker only after the result is known. A successful push advances `expected_head` to the pushed commit. An explicit `BLOCKED:` incomplete outcome marks that campaign terminal. Other failed/incomplete attempts consume an iteration but may be retried by a new owner comment until the base policy limit is reached.
+
+Campaign PRs remain maintenance workspaces. A signed campaign marker does not grant the model new capabilities, and a non-maintenance worker job against a campaign PR is rejected before OpenCode execution.
 
 ## Evidence snapshot
 
@@ -191,7 +209,7 @@ The issue-origin initializer is implemented, but the following remain intentiona
 - discovering and grouping dependency-bot PRs into lanes;
 - automatically closing superseded dependency PRs;
 - updating sticky campaign status comments;
-- waiting/retrying across multiple candidate commits;
+- automatically scheduling the next campaign iteration after checks settle;
 - cancelling GitHub Actions runs;
 - changing draft/ready state;
 - merging a maintenance pull request.
