@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import https from "node:https";
 import {
   abortMaintenanceCampaignIteration as abortCampaignStateIteration,
+  beginAutomaticMaintenanceCampaignIteration as beginAutomaticCampaignStateIteration,
   beginMaintenanceCampaignIteration as beginCampaignStateIteration,
   completeMaintenanceCampaignIteration as completeCampaignStateIteration,
   createInitialMaintenanceCampaignState,
@@ -532,7 +533,7 @@ async function createCampaignBranch(
 
 export async function createOrReuseMaintenanceCampaign(
   config,
-  { repository, issueNumber, commentId },
+  { repository, issueNumber, commentId, taskPrompt = null, model = null },
 ) {
   const token = await createRepositoryInstallationToken(config, repository, {
     contents: "write",
@@ -589,6 +590,8 @@ export async function createOrReuseMaintenanceCampaign(
     commentId,
     pullNumber: pullRequest.number,
     headSha: markerSha,
+    taskPrompt,
+    model,
   });
   pullRequest = await updatePullRequestBody(
     repository,
@@ -718,6 +721,97 @@ export async function beginMaintenanceCampaignDispatch(
     maxIterations,
     expectedHead: transition.state.expected_head,
     sourceIssue: transition.state.source_issue,
+  };
+}
+
+export async function beginAutomaticMaintenanceCampaignDispatch(
+  config,
+  {
+    repository,
+    pullNumber,
+    triggerCommentId,
+    expectedHead,
+    expectedIteration,
+    nowSeconds = Math.floor(Date.now() / 1000),
+  },
+) {
+  const token = await createRepositoryInstallationToken(
+    config,
+    repository,
+    CAMPAIGN_CONTROL_TOKEN_PERMISSIONS,
+  );
+  const pullRequest = await getPullRequest(repository, pullNumber, token);
+  const state = campaignStateForPullRequest(
+    pullRequest,
+    config.workerDispatchSecret,
+  );
+  if (!state) {
+    return { campaign: false, dispatch: false, reason: "not-campaign" };
+  }
+  if (pullRequest.state !== "open") {
+    return { campaign: true, dispatch: false, reason: "closed" };
+  }
+  if (!pullRequest.head?.sha || !pullRequest.base?.sha) {
+    throw new Error("Maintenance campaign pull request head/base is unavailable");
+  }
+  const liveHead = String(pullRequest.head.sha).toLowerCase();
+  if (liveHead !== String(expectedHead || "").toLowerCase()) {
+    return { campaign: true, dispatch: false, reason: "stale" };
+  }
+
+  const policyText = await getMaintenancePolicyText(
+    repository,
+    pullRequest.base.sha,
+    token,
+  );
+  const policyResult = resolveMaintenancePolicy(
+    policyText,
+    "base@" +
+      String(pullRequest.base.sha).slice(0, 12) +
+      ":.github/maintenance-policy.yml",
+  );
+  const maxIterations = policyResult.policy.campaign.max_iterations;
+  const transition = beginAutomaticCampaignStateIteration(state, {
+    triggerCommentId,
+    currentHead: liveHead,
+    expectedIteration,
+    maxIterations,
+    nowSeconds,
+  });
+
+  if (transition.action === "dispatch" || transition.action === "limit") {
+    await updatePullRequestBody(
+      repository,
+      pullNumber,
+      writeMaintenanceCampaignState(
+        pullRequest.body,
+        transition.state,
+        config.workerDispatchSecret,
+      ),
+      token,
+    );
+    await tryUpdateMaintenanceCampaignStatus(
+      repository,
+      pullNumber,
+      {
+        state: transition.state,
+        maxIterations,
+        phase: transition.action === "limit" ? "terminal" : "dispatching",
+      },
+      token,
+    );
+  }
+
+  return {
+    campaign: true,
+    dispatch: transition.action === "dispatch",
+    reason: transition.action,
+    iteration: transition.state.iteration,
+    maxIterations,
+    expectedHead: transition.state.expected_head,
+    sourceIssue: transition.state.source_issue,
+    taskPrompt: transition.state.auto_task_prompt,
+    model: transition.state.auto_model,
   };
 }
 
