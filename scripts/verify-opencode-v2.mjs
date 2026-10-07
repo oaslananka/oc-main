@@ -52,6 +52,22 @@ if (target === "config") {
   const info = document.info;
   assert.equal(info.update, "disable");
   assert.equal(info.share, "disabled");
+  assert.equal(info.lsp, false);
+  assert.deepEqual(info.skills, ["~/.config/opencode/skills"]);
+  assert.deepEqual(info.instructions, ["~/.config/opencode/AGENTS.md"]);
+  for (const id of [
+    "orchestrator",
+    "planner",
+    "researcher",
+    "implementer",
+    "reviewer",
+    "security-reviewer",
+    "test-engineer",
+    "ci-debugger",
+    "release-engineer",
+  ]) {
+    assert.ok(info.agents?.[id], "trusted config is missing agent " + id);
+  }
   assert.equal(info.mcp?.servers?.context7?.type, "remote");
   assert.equal(
     info.mcp?.servers?.context7?.url,
