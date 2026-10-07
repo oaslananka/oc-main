@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, MAINTENANCE_READ_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, openPullRequestsApiPath, requiredChecksApiPaths } from "../src/github.mjs";
+import { CAMPAIGN_CONTROL_TOKEN_PERMISSIONS, FINALIZER_COMMENT_TOKEN_PERMISSIONS, FINALIZER_HEAD_CONVERGENCE_ATTEMPTS, FINALIZER_HEAD_CONVERGENCE_DELAY_MS, MAINTENANCE_READ_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, openPullRequestsApiPath, requiredChecksApiPaths, waitForPullRequestHeadAfterPush } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -191,5 +191,110 @@ test("maintenance read token is explicitly read-only", () => {
         pull_requests: "read",
       },
     },
+  );
+});
+
+test("waits only while GitHub still reports the prepared head after push", async () => {
+  const prepared = "a".repeat(40);
+  const pushed = "b".repeat(40);
+  const observed = [prepared, prepared, pushed];
+  const sleeps = [];
+  const pull = await waitForPullRequestHeadAfterPush({
+    repository: "owner/repo",
+    pullNumber: 7,
+    preparedHead: prepared,
+    newHead: pushed,
+    token: "test-token",
+    getPullRequestImpl: async () => ({
+      state: "open",
+      head: { sha: observed.shift() },
+    }),
+    sleepImpl: async (ms) => sleeps.push(ms),
+  });
+
+  assert.equal(pull.head.sha, pushed);
+  assert.deepEqual(sleeps, [
+    FINALIZER_HEAD_CONVERGENCE_DELAY_MS,
+    FINALIZER_HEAD_CONVERGENCE_DELAY_MS,
+  ]);
+});
+
+test("fails closed on an unexpected third-party head after push", async () => {
+  const prepared = "a".repeat(40);
+  const pushed = "b".repeat(40);
+  const thirdParty = "c".repeat(40);
+  let slept = false;
+
+  await assert.rejects(
+    () =>
+      waitForPullRequestHeadAfterPush({
+        repository: "owner/repo",
+        pullNumber: 7,
+        preparedHead: prepared,
+        newHead: pushed,
+        token: "test-token",
+        getPullRequestImpl: async () => ({
+          state: "open",
+          head: { sha: thirdParty },
+        }),
+        sleepImpl: async () => {
+          slept = true;
+        },
+      }),
+    /unexpected commit after push/,
+  );
+  assert.equal(slept, false);
+});
+
+test("fails closed when the prepared head never converges to the pushed commit", async () => {
+  const prepared = "a".repeat(40);
+  const pushed = "b".repeat(40);
+  let calls = 0;
+
+  await assert.rejects(
+    () =>
+      waitForPullRequestHeadAfterPush({
+        repository: "owner/repo",
+        pullNumber: 7,
+        preparedHead: prepared,
+        newHead: pushed,
+        token: "test-token",
+        attempts: FINALIZER_HEAD_CONVERGENCE_ATTEMPTS,
+        delayMs: 0,
+        getPullRequestImpl: async () => {
+          calls += 1;
+          return { state: "open", head: { sha: prepared } };
+        },
+        sleepImpl: async () => {},
+      }),
+    /did not converge to the pushed commit/,
+  );
+  assert.equal(calls, FINALIZER_HEAD_CONVERGENCE_ATTEMPTS);
+});
+
+test("bounds finalizer post-push convergence configuration", async () => {
+  await assert.rejects(
+    () =>
+      waitForPullRequestHeadAfterPush({
+        repository: "owner/repo",
+        pullNumber: 7,
+        preparedHead: "a".repeat(40),
+        newHead: "b".repeat(40),
+        token: "test-token",
+        attempts: FINALIZER_HEAD_CONVERGENCE_ATTEMPTS + 1,
+      }),
+    /Invalid finalizer head convergence attempt count/,
+  );
+  await assert.rejects(
+    () =>
+      waitForPullRequestHeadAfterPush({
+        repository: "owner/repo",
+        pullNumber: 7,
+        preparedHead: "a".repeat(40),
+        newHead: "b".repeat(40),
+        token: "test-token",
+        delayMs: FINALIZER_HEAD_CONVERGENCE_DELAY_MS + 1,
+      }),
+    /Invalid finalizer head convergence delay/,
   );
 });
