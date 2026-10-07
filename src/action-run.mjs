@@ -42,9 +42,15 @@ async function execute(agent, prompt, timeoutMs) {
     const raw = String(result.stderr || "").trim() ||
       String(result.stdout || "").trim() ||
       "no process output";
+    console.error(
+      "OpenCode nonzero result rejected code=" + result.code +
+        " reason=" + classification.reason +
+        " stdoutBytes=" + Buffer.byteLength(String(result.stdout || "")) +
+        " stderrBytes=" + Buffer.byteLength(String(result.stderr || "")),
+    );
     throw new Error(
       job.opencodeBin + " failed with exit code " + result.code +
-        " (" + classification.reason + "): " + errorTail(raw, 12_000),
+        " (" + classification.reason + "): " + errorTail(raw, 5_000),
     );
   }
   if (classification.recovered) {
