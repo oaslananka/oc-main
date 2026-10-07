@@ -18,7 +18,7 @@ Logical consumer:
 
 ### GitHub Actions worker plane
 
-An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, wrapped as `client_payload.job`, and dispatched to `oaslananka/oc-main` with repository-dispatch event `oc-run`. For an ordinary issue, only an allowlisted owner `/oc maintenance` command is accepted: trusted controller code creates a source-comment-bound branch with a marker commit and a draft PR, comments the issue with that PR number, then dispatches the same signed PR worker flow.
+An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, wrapped as `client_payload.job`, and dispatched to `oaslananka/oc-main` with repository-dispatch event `oc-run`. For an ordinary issue, only an allowlisted owner `/oc maintenance` command is accepted: trusted controller code creates a source-comment-bound branch with a marker commit and draft PR, writes HMAC-signed campaign state into the PR body, comments the issue with that PR number, reserves a bounded iteration, then dispatches the same signed PR worker flow.
 
 The worker runs on GitHub-hosted Ubuntu and installs the real OpenCode CLI directly. Production pin is OpenCode v2 `2.0.24`; the OpenCode GitHub Action is not used.
 
@@ -106,7 +106,7 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 ## GitHub Actions security boundary
 
 - control checkout uses `persist-credentials: false`;
-- trusted controller/prepare/finalize stages mint installation tokens with an explicit single-repository scope and stage-specific permissions instead of inheriting the GitHub App registration's full permission set; issue campaign bootstrap uses only `contents:write`, `issues:write`, and `pull_requests:write` on the target repository;
+- trusted controller/prepare/finalize stages mint installation tokens with an explicit single-repository scope and stage-specific permissions instead of inheriting the GitHub App registration's full permission set; issue campaign bootstrap uses only `contents:write`, `issues:write`, and `pull_requests:write` on the target repository, while campaign iteration control uses `contents:read` plus `pull_requests:write`;
 - OpenCode receives no Doppler/GitHub App/installation/webhook credential;
 - external-directory access, unattended questions, subagents, Git push/commit/remote/config, `gh`, SSH/SCP/rsync are denied by native v2 policy;
 - read-only modes cannot be pushed by the trusted finalizer;
@@ -128,9 +128,11 @@ For `maintenance`, prepare builds a structured evidence snapshot before OpenCode
 
 The maintenance policy parser accepts only the documented bounded schema. It always requires `required_checks.inherit_from_github: true`; malformed or unsupported policy falls back to built-in defaults. The candidate PR cannot weaken its own evidence policy because the policy is read from the base SHA.
 
+For issue-origin campaigns, the controller also reads `campaign.max_iterations` from that base-SHA policy before each dispatch. Campaign state is stored as one hidden HMAC-signed marker in the draft PR body and binds source issue/comment, campaign PR, exact expected head, iteration, terminal/in-flight state, and trigger-comment identity. Prepare verifies the active lease before OpenCode starts. Finalize updates the same signed state after an incomplete/failure/no-change result or after a successful non-force push. Dispatch failures roll back the reservation; a reservation older than 45 minutes can be reclaimed so a controller crash cannot leave the campaign permanently busy. The generated campaign branch prefix is reserved; missing/tampered state on such a branch fails closed. A model-reported `BLOCKED:` result remains evidence/result text and does not itself set trusted terminal state.
+
 No Sonar/Codacy/Codecov API credential is exposed to OpenCode. This tranche does not require new provider credentials; future authenticated collectors must stay in trusted prepare and pass only sanitized findings to the model.
 
-OpenCode CLI output is requested as JSON and reduced to assistant text events. For `fix`, `apply`, `ci`, `release`, and `refactor`, a no-change first pass triggers one bounded retry. A second no-change result is marked incomplete and the Actions run fails rather than reporting a successful no-op.
+OpenCode CLI output is requested as JSON and reduced to assistant text events. For `fix`, `apply`, `ci`, `release`, `refactor`, and `maintenance`, a no-change first pass triggers one bounded retry. A second no-change result is marked incomplete and the Actions run fails rather than reporting a successful no-op.
 
 A non-zero OpenCode process is still a failure by default. The only recoverable process status is exit code `1` when stderr is empty and the complete JSON stream proves that a session error was followed by a later completed assistant turn. If a final `step_finish` event is present it must have reason `stop`; the classifier tolerates a missing final `step_finish` because OpenCode's JSON stream can omit that last event during teardown. All unexplained or malformed non-zero results fail closed, and edit-required/read-only/exact-head finalization gates remain unchanged.
 
@@ -141,5 +143,5 @@ Context7 is enabled at `https://mcp.context7.com/mcp` using anonymous access wit
 ## Current limitations
 
 - OpenCode Console free-tier currently rejects custom primary agents/custom subagent sessions; production uses built-in `build`/`plan` until upstream fixes and E2E validation permit re-enabling richer custom agents.
-- Webhook delivery de-duplication is in-memory on the VPS controller.
+- Webhook delivery de-duplication is in-memory on the VPS controller; issue-origin campaign command identity is additionally persisted in signed PR metadata, so completed trigger comments are not re-dispatched after controller restart.
 - Shared `/github` routing is still co-located with oc-main while it is the sole webhook consumer.
