@@ -263,7 +263,7 @@ export async function getMaintenancePolicyText(repository, sha, token) {
     ) {
       throw new Error("Maintenance policy response is not a base64 file");
     }
-    return Buffer.from(result.content.replace(/\\n/g, ""), "base64").toString("utf8");
+    return Buffer.from(result.content.replace(/\s+/g, ""), "base64").toString("utf8");
   } catch (error) {
     if (error?.status === 404) return null;
     throw error;
@@ -315,10 +315,12 @@ export async function getRequiredStatusCheckNames(repository, branch, token) {
     }
     sources.push("branch-protection");
   } catch (error) {
-    warnings.push(
-      "Legacy branch protection required checks unavailable: " +
-        String(error?.message || error),
-    );
+    if (error?.status !== 404) {
+      warnings.push(
+        "Legacy branch protection required checks unavailable: " +
+          String(error?.message || error),
+      );
+    }
   }
 
   return {
