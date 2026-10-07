@@ -230,6 +230,36 @@ Only after the fast gate passes should a **full gate** spend resources on E2E, v
 
 Existing repository `concurrency.cancel-in-progress` behavior should be preferred before adding explicit Actions cancellation. Any future cancellation authority belongs to trusted control-plane code, never OpenCode.
 
+## Check-aware continuation decision model
+
+oc-main includes a pure trusted decision function for future campaign continuation. This tranche does not poll GitHub, schedule timers, post owner commands, or dispatch another OpenCode worker automatically.
+
+The decision model consumes signed campaign state, the live current PR head, the base-policy iteration bound, and one prepared maintenance evidence snapshot. It evaluates, in fail-closed order:
+
+1. terminal or in-flight signed state;
+2. exact campaign-head equality;
+3. iteration-policy and budget bounds;
+4. evidence presence and exact-head freshness;
+5. complete required-check authority;
+6. missing or pending required checks;
+7. required-check summary consistency;
+8. settled blocking checks/findings;
+9. a clean settled head.
+
+Only a current-head, authority-complete, settled snapshot with blocking checks or blocking normalized findings is classified `retry-eligible`. Classification is not dispatch authority.
+
+Conservative outcomes are explicit:
+
+- active iteration → hold;
+- no/stale evidence → refresh evidence;
+- pending required checks → hold / waiting for checks;
+- missing required checks or incomplete authority → owner review;
+- stale signed campaign head → owner review;
+- exhausted/conflicting iteration policy → owner review;
+- clean settled head → owner review.
+
+The sticky renderer understands `waiting-checks`, `ready-remediation`, and `owner-review` phases, but no runtime path emits those scheduler phases automatically yet.
+
 ## Deferred campaign orchestration
 
 The issue-origin initializer is implemented, but the following remain intentionally out of scope:
