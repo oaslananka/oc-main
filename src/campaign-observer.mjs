@@ -96,7 +96,8 @@ function observedStatusPhase(decision, attempt, maximumAttempts, reviewInput) {
   }
   if (decision.statusPhase !== "owner-review") return decision.statusPhase;
   // Display-only handoff; the scheduler remains the only dispatch classifier.
-  return classifyMaintenanceCampaignReviewReadiness(reviewInput).ownerReviewReady
+  const readiness = classifyMaintenanceCampaignReviewReadiness(reviewInput);
+  return readiness?.ownerReviewReady === true
     ? "owner-review-ready"
     : "owner-review";
 }
