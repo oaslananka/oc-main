@@ -43,6 +43,7 @@ function evidence({
     policy: { campaign: { max_iterations: 4 } },
     requiredChecks: { authorityComplete },
     checkSummary: {
+      candidateCount: 1,
       requiredCount: 1,
       blockingCount: blocking,
       pendingRequiredCount: pending,
@@ -52,7 +53,10 @@ function evidence({
     checks: [
       {
         name: "build",
+        key: "build",
         state: pending > 0 ? "pending" : blocking > 0 ? "failure" : "success",
+        status: pending > 0 ? "in_progress" : "completed",
+        conclusion: pending > 0 ? "" : blocking > 0 ? "failure" : "success",
         blocking: blocking > 0,
         requiredBy: ["github-live"],
       },
@@ -136,7 +140,7 @@ test("waits on pending checks then stops on a clean settled head", async () => {
   assert.equal(result.decision.reason, "clean-settled-head");
   assert.deepEqual(
     harness.statusUpdates.map((status) => status.phase),
-    ["waiting-checks", "owner-review"],
+    ["waiting-checks", "owner-review-ready"],
   );
   assert.deepEqual(harness.sleeps, [5]);
 });
@@ -364,4 +368,44 @@ test("settles a slow required check within the two-minute trusted window", async
       "ready-remediation",
     ],
   );
+});
+
+test("clean exhausted campaign projects owner-review-ready without retry", async () => {
+  const exhausted = state({ iteration: 4 });
+  const harness = observerHarness([evidence()], {
+    campaignStates: [exhausted, exhausted],
+  });
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo", pullNumber: 7, state: exhausted,
+    readToken: "read", statusToken: "write", campaignStateSecret: "secret",
+    attempts: 1, delayMs: 0, ...harness,
+  });
+  assert.equal(result.decision.reason, "iteration-limit");
+  assert.equal(result.decision.dispatchEligible, false);
+  assert.equal(harness.statusUpdates[0].phase, "owner-review-ready");
+});
+
+test("skipped required check stays owner-review, never owner-review-ready", async () => {
+  const skipped = evidence();
+  skipped.checks[0].conclusion = "skipped";
+  const harness = observerHarness([skipped]);
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo", pullNumber: 7, state: state(),
+    readToken: "read", statusToken: "write", campaignStateSecret: "secret",
+    attempts: 1, delayMs: 0, ...harness,
+  });
+  assert.equal(result.decision.reason, "clean-settled-head");
+  assert.equal(harness.statusUpdates[0].phase, "owner-review");
+});
+
+test("terminal signed campaign remains owner-review with clean checks", async () => {
+  const terminal = state({ terminal: true });
+  const harness = observerHarness([evidence()], { campaignStates: [terminal, terminal] });
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo", pullNumber: 7, state: terminal,
+    readToken: "read", statusToken: "write", campaignStateSecret: "secret",
+    attempts: 1, delayMs: 0, ...harness,
+  });
+  assert.equal(result.decision.reason, "campaign-terminal");
+  assert.equal(harness.statusUpdates[0].phase, "owner-review");
 });

@@ -163,16 +163,23 @@ test("renders scheduler-owned waiting and owner-review phases", () => {
     maxIterations: 4,
     phase: "owner-review",
   });
+  const ownerReady = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "owner-review-ready",
+  });
 
   assert.match(waiting, /Waiting for current-head required checks/);
   assert.match(ready, /Current-head blocking evidence is retry eligible/);
   assert.match(review, /Owner review required/);
+  assert.match(ownerReady, /Checks settled; owner review required/);
   assert.equal(readMaintenanceCampaignWakeup(waiting), null);
   assert.deepEqual(readMaintenanceCampaignWakeup(ready), {
     iteration: 1,
     expectedHead: "a".repeat(40),
   });
   assert.equal(readMaintenanceCampaignWakeup(review), null);
+  assert.equal(readMaintenanceCampaignWakeup(ownerReady), null);
 });
 
 test("rejects malformed or duplicate automatic wakeup markers", () => {

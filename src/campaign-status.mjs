@@ -20,6 +20,7 @@ const PHASE_LABELS = new Map([
   ["waiting-checks", "Waiting for current-head required checks"],
   ["ready-remediation", "Current-head blocking evidence is retry eligible"],
   ["owner-review", "Owner review required"],
+  ["owner-review-ready", "Checks settled; owner review required"],
 ]);
 
 function positiveInteger(value, label) {
