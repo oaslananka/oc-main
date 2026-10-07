@@ -20,7 +20,18 @@ const payload = verifySignedJob(
   config.workerDispatchSecret,
 );
 
-if (!config.allowedUserIds.has(payload.comment_user_id)) throw new Error("Worker payload user is not allowlisted");
+if (
+  payload.trigger_kind === "owner-comment" &&
+  !config.allowedUserIds.has(payload.comment_user_id)
+) {
+  throw new Error("Worker payload user is not allowlisted");
+}
+if (
+  payload.trigger_kind === "automation-status" &&
+  (payload.mode !== "maintenance" || !payload.campaign_iteration)
+) {
+  throw new Error("Automatic worker payload is not a maintenance campaign iteration");
+}
 if (!config.allowedModels.has(payload.model)) throw new Error("Worker payload model is not allowlisted");
 
 await fs.rm(".oc-main-job", { recursive: true, force: true });
@@ -56,6 +67,7 @@ if (campaignState) {
     pullNumber: payload.pull_number,
     commentId: payload.comment_id,
     headSha: expectedHead,
+    campaignIteration: payload.campaign_iteration,
   }).iteration;
 }
 const headToken = await createRepositoryInstallationToken(
@@ -110,6 +122,8 @@ const prompt = buildAgentPrompt({
 
 await writeJob({
   repository: payload.repository, pullNumber: payload.pull_number, commentId: payload.comment_id,
+  commentUserId: payload.comment_user_id, triggerKind: payload.trigger_kind,
+  signedCampaignIteration: payload.campaign_iteration,
   model: payload.model, mode: payload.mode, agent: payload.agent, risk: payload.risk,
   allowEdits: payload.allow_edits, capabilities: payload.capabilities, prompt,
   qualityContext,
