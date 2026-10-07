@@ -1,3 +1,7 @@
+import {
+  MAINTENANCE_CAMPAIGN_STATUS_BOT_LOGIN,
+  MAINTENANCE_CAMPAIGN_STATUS_MARKER,
+} from "./campaign-status.mjs";
 import crypto from "node:crypto";
 
 export function verifyWebhookSignature(rawBody, signatureHeader, secret) {
@@ -63,5 +67,32 @@ export function extractIssueCommentTrigger(eventName, payload) {
     commentUserId: payload.comment?.user?.id,
     commentUserLogin: payload.comment?.user?.login,
     reviewContext: null,
+  };
+}
+
+
+export function extractCampaignStatusTrigger(eventName, payload) {
+  if (
+    eventName !== "issue_comment" ||
+    payload?.action !== "edited" ||
+    !payload.issue?.pull_request
+  ) {
+    return null;
+  }
+  const comment = payload.comment;
+  if (
+    comment?.user?.login !== MAINTENANCE_CAMPAIGN_STATUS_BOT_LOGIN ||
+    comment?.user?.type !== "Bot" ||
+    !String(comment?.body || "").includes(MAINTENANCE_CAMPAIGN_STATUS_MARKER)
+  ) {
+    return null;
+  }
+  return {
+    repository: payload.repository?.full_name,
+    pullNumber: payload.issue?.number,
+    installationId: payload.installation?.id,
+    commentId: comment?.id,
+    commentUserId: comment?.user?.id,
+    commentUserLogin: comment?.user?.login,
   };
 }
