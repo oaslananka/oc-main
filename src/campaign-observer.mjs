@@ -21,6 +21,14 @@ function positiveInteger(value, label) {
   return number;
 }
 
+function nonNegativeInteger(value, label) {
+  const number = Number(value ?? 0);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error("Invalid campaign observer " + label);
+  }
+  return number;
+}
+
 function exactHead(value, label) {
   const sha = String(value || "").trim().toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(sha)) {
@@ -35,7 +43,7 @@ function observationLease(state) {
   }
   return {
     pull: positiveInteger(state.campaign_pr, "campaign pull request"),
-    iteration: Number(state.iteration),
+    iteration: nonNegativeInteger(state.iteration, "campaign iteration"),
     head: exactHead(state.expected_head, "campaign expected head"),
     terminal: state.terminal === true,
     inFlight: state.in_flight === true,
