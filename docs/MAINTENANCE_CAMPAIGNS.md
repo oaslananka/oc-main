@@ -228,6 +228,31 @@ The parser intentionally accepts only a small YAML subset: mappings, scalar valu
 
 Policy may guide prioritization and strengthen expectations. Analyzer policy may stay at its built-in authority or strengthen to `required`, and `block_new` severities may only stay the same or expand. Policy never changes the signed execution capability profile, downgrades built-in analyzer defaults, or weakens live GitHub gates.
 
+## Target repository required-check onboarding
+
+Target repositories do **not** need an oc-main-specific workflow or OpenCode configuration. They do need a trustworthy, observable required-check contract before an issue-origin maintenance campaign may automatically remediate a failed check. The repository's own branch protection/rulesets remain the merge authority; an oc-main maintenance policy adds classification requirements but does **not** configure GitHub branch protection.
+
+1. **Identify the protected base.** Record the target repository, default/protected base branch, branch rules or legacy protection, and any required review/merge queue requirements. Confirm the shared GitHub App is already installed and its existing repository access is adequate; do not expand global App permissions just for onboarding.
+2. **Observe real check names on an actual pull request.** Run the target's existing PR CI against a known exact head SHA. Compare the GitHub *check-run name* and reporting App/source against the branch/ruleset required-check entries. Matrix jobs, renamed jobs, and provider check names can differ from workflow filenames; never guess from a YAML job ID or workflow name. For GitHub checks, inspect status and conclusion on the **current candidate head**, not a prior commit. When check and commit-status contexts share a name, inspect both. Verify any required check actually runs on the appropriate event (and `merge_group` if the target uses GitHub merge queues).
+3. **Commit a conservative base policy when required evidence is otherwise insufficient.** Add `.github/maintenance-policy.yml` to the target's protected base branch through its normal reviewed CI path. The following is a **template**, not an instruction to require a literal `verified-check-name` check:
+
+   ```yaml
+   version: 1
+   required_checks:
+     inherit_from_github: true
+     names:
+       - verified-check-name
+   ```
+
+   Replace `verified-check-name` with the actual observed check-run name(s). Keep GitHub inheritance enabled. Add only checks whose failure should authorize a bounded maintenance retry, not every advisory workflow. The policy parser accepts a restricted YAML subset and fails back to defaults when malformed; review the parsed policy and resulting check evidence before relying on it. Use the documented `campaign` and `analyzers` keys only when the target needs stricter bounded settings.
+4. **Confirm the policy is active at the correct base SHA.** Maintenance reads the policy from the candidate PR's **base commit**, not from its own proposed changes and not from the latest `main` independently of that PR. A newly merged policy does not retroactively change an already-open PR's fixed base SHA. Refresh/rebase or create a new campaign against the protected base after policy adoption, then verify its actual base SHA and the union of live-required plus base-policy-required names.
+5. **Verify fail-closed behavior before relying on retries.** Confirm the trusted evidence snapshot reports complete required-check authority and the exact expected head. Pending or unreported required checks must not trigger a retry; missing/cancelled/ambiguous cases go to owner attention. A failed *optional* check is not automatically remediation-authoritative. Only settled required failures or normalized blocking findings may be retry-eligible, and the controller still revalidates signed state, policy iteration bounds, and exact head before any dispatch.
+6. **Test on a disposable, reviewed canary if needed.** Use a harmless temporary test in a dedicated PR, prove that the failure is actually required, and verify bounded automatic continuation only after all required evidence settles. Close the canary unmerged and remove its temporary branch. Do not bypass branch policy or weaken CI just to make the test pass.
+
+**GitHub merge versus owner-handoff:** GitHub may treat `neutral` or `skipped` checks as non-blocking for ordinary merge rules; a trusted owner-review readiness signal deliberately requires an explicit successful, completed required check and is **not** permission to mark a draft ready or merge. Missing provider/branch-rule read access is an unknown, not proof that no required checks exist.
+
+For the current platform behavior, see the automatic re-dispatch and check-aware continuation sections above. For operational permissions and deployment boundaries, see [Operations](OPERATIONS.md). The GitHub-side check semantics and troubleshooting details are documented by [GitHub Status Checks](https://docs.github.com/en/pull-requests/reference/status-checks) and [Troubleshooting Required Status Checks](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks).
+
 ## Built-in analyzer defaults
 
 The built-in policy treats CodeQL, OSV, Semgrep, GitGuardian, and npm audit as required analyzer families when their checks are present. Sonar and Codacy are advisory by default with high-severity new-finding thresholds. Socket is supply-chain evidence, Codecov is coverage evidence, and Trivy is conditional evidence.
@@ -246,7 +271,7 @@ Existing repository `concurrency.cancel-in-progress` behavior should be preferre
 
 ## Check-aware continuation decision model
 
-oc-main includes a pure trusted decision function for future campaign continuation. This tranche does not poll GitHub, schedule timers, post owner commands, or dispatch another OpenCode worker automatically.
+The campaign continuation decision is a pure trusted function and never dispatches by itself. Production finalization now observes bounded fresh current-head evidence, and the separate VPS controller may automatically reserve and dispatch exactly one next iteration only after revalidating a signed, fresh, settled retry-eligible wakeup as described above. Neither the classifier nor the sticky comment alone grants mutation authority.
 
 The decision model consumes signed campaign state, the live current PR head, the base-policy iteration bound, and one prepared maintenance evidence snapshot. It evaluates, in fail-closed order:
 
