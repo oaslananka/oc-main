@@ -67,6 +67,15 @@ export async function observeMaintenanceCampaign({
     if (!snapshot || typeof snapshot !== "object") {
       throw new Error("Observer snapshot is unavailable");
     }
+    if (snapshot.stop === true) {
+      return Object.freeze({
+        attempts: attempt,
+        timedOut: false,
+        stopped: true,
+        stopReason: String(snapshot.reason || "observer-stopped"),
+        decision: null,
+      });
+    }
 
     const decision = decide(snapshot);
     if (!shouldObserveAgain(decision)) {
