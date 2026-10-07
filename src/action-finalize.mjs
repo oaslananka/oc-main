@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { loadConfig } from "./config.mjs";
 import { createPullRequestComment, createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { commitChanges, hasChanges, pushHead } from "./git.mjs";
+import { finalizationDecision } from "./finalize-policy.mjs";
 import { readResult, readVerifiedJob } from "./action-state.mjs";
 
 function truncate(text, limit = 5000) {
@@ -33,16 +34,26 @@ async function main() {
   }
 
   const changed = await hasChanges(job.repositoryDir);
-  if (!job.allowEdits && changed) {
+  const decision = finalizationDecision({
+    runStatus: result.runStatus,
+    allowEdits: job.allowEdits,
+    changed,
+  });
+
+  if (decision === "blocked-read-only") {
     await createPullRequestComment(job.repository, job.pullNumber,
       "Run blocked (" + runLabel(job) + "). The selected mode is read-only but the agent produced tracked-file changes, so nothing was pushed.\n\n" + truncate(result.output), baseToken);
     return;
   }
 
-  if (!changed) {
+  if (decision === "completed-no-changes") {
     await createPullRequestComment(job.repository, job.pullNumber,
       "Completed (" + runLabel(job) + "). No repository changes were produced.\n\n" + truncate(result.output), baseToken);
     return;
+  }
+
+  if (decision !== "push") {
+    throw new Error("Unexpected finalizer decision: " + decision);
   }
 
   const latest = await getPullRequest(job.repository, job.pullNumber, baseToken);
