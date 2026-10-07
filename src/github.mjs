@@ -291,10 +291,11 @@ export async function createPullRequestComment(repository, pullNumber, body, tok
   return createIssueComment(repository, pullNumber, body, token);
 }
 
-export function maintenanceCampaignBranchName(issueNumber, commentId) {
+export function maintenanceCampaignBranchNames(issueNumber, commentId) {
   const issue = positiveId(issueNumber, "issue number");
   const comment = positiveId(commentId, "comment ID");
-  return `oc-maintenance-issue-${issue}-comment-${comment}`;
+  const primary = `oc-maintenance-issue-${issue}-comment-${comment}`;
+  return { primary, retry: `${primary}-retry` };
 }
 
 async function getRepository(repository, token) {
@@ -388,10 +389,9 @@ async function createMaintenancePullRequest(
 
 async function createCampaignBranch(
   repository,
-  { issueNumber, branch, baseBranch, baseSha },
+  { issueNumber, branch, baseSha },
   token,
 ) {
-  void baseBranch;
   if (await getGitReference(repository, branch, token)) {
     throw new Error(
       "Maintenance campaign branch already exists without a matching reusable pull request",
@@ -432,18 +432,30 @@ export async function createOrReuseMaintenanceCampaign(
   const baseBranch = safeBranchName(repositoryData?.default_branch);
   const baseRef = await getGitReference(repository, baseBranch, token);
   const baseSha = commitSha(baseRef?.object?.sha);
-  const branch = maintenanceCampaignBranchName(issueNumber, commentId);
-  const existingPull = await findPullRequestForBranch(repository, branch, token);
+  const names = maintenanceCampaignBranchNames(issueNumber, commentId);
+  let branch = names.primary;
+  let existingPull = await findPullRequestForBranch(repository, branch, token);
   if (existingPull?.state === "open") {
     return { pullRequest: existingPull, branch, reused: true };
   }
   if (existingPull) {
-    throw new Error("Maintenance campaign pull request is not open");
+    return { pullRequest: existingPull, branch, reused: true, terminal: true };
+  }
+
+  if (await getGitReference(repository, branch, token)) {
+    branch = names.retry;
+    existingPull = await findPullRequestForBranch(repository, branch, token);
+    if (existingPull?.state === "open") {
+      return { pullRequest: existingPull, branch, reused: true };
+    }
+    if (existingPull) {
+      return { pullRequest: existingPull, branch, reused: true, terminal: true };
+    }
   }
 
   await createCampaignBranch(
     repository,
-    { issueNumber, branch, baseBranch, baseSha },
+    { issueNumber, branch, baseSha },
     token,
   );
   const pullRequest = await createMaintenancePullRequest(
@@ -461,6 +473,7 @@ export async function createOrReuseMaintenanceCampaign(
 
   return { pullRequest, branch, reused: false };
 }
+
 function commitSha(value) {
   const sha = String(value || "").trim();
   if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("Invalid GitHub commit SHA");
