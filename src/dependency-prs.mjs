@@ -193,7 +193,7 @@ function laneCapacity(pr) {
   return Math.max(pr.dependencyCountHint || 1, 1);
 }
 
-function laneRecord(key, pulls, maximum) {
+function laneRecord(key, pulls) {
   const dependencyCount = pulls.reduce(
     (total, pr) => total + laneCapacity(pr),
     0,
@@ -224,6 +224,89 @@ function laneKey(pr) {
   return pr.ecosystem + ":" + pr.updateScope;
 }
 
+function mustIsolate(pr, maximum) {
+  return (
+    pr.updateScope === "major" ||
+    pr.updateScope === "group" ||
+    pr.updateScope === "unknown" ||
+    pr.ecosystem === "unknown" ||
+    pr.dependencyCountHint > maximum
+  );
+}
+
+function dependencyCount(pulls) {
+  return pulls.reduce((total, pr) => total + laneCapacity(pr), 0);
+}
+
+function nextBatchId(lanes, key) {
+  const prefix = key + ":batch-";
+  const count = lanes.filter((lane) => lane.id.startsWith(prefix)).length;
+  return prefix + (count + 1);
+}
+
+function flushBatch(lanes, key, bucket) {
+  if (!bucket.length) return;
+  lanes.push(laneRecord(nextBatchId(lanes, key), bucket));
+}
+
+function planDependencyLanes(normalized, maximum) {
+  const buckets = new Map();
+  const lanes = [];
+
+  for (const pr of normalized) {
+    if (mustIsolate(pr, maximum)) {
+      lanes.push(laneRecord(laneKey(pr) + ":pr-" + pr.number, [pr]));
+      continue;
+    }
+
+    const key = laneKey(pr);
+    const bucket = buckets.get(key) || [];
+    if (
+      bucket.length > 0 &&
+      dependencyCount(bucket) + laneCapacity(pr) > maximum
+    ) {
+      flushBatch(lanes, key, bucket);
+      buckets.set(key, [pr]);
+      continue;
+    }
+    bucket.push(pr);
+    buckets.set(key, bucket);
+  }
+
+  for (const [key, bucket] of buckets) {
+    flushBatch(lanes, key, bucket);
+  }
+
+  return lanes.sort(
+    (a, b) => (a.pullNumbers[0] || 0) - (b.pullNumbers[0] || 0),
+  );
+}
+
+function normalizeRecognizedPulls(pulls, warnings) {
+  const normalized = [];
+  const rows = Array.isArray(pulls) ? pulls : [];
+  let truncated = false;
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const pr = normalizedPull(rows[index], warnings);
+    if (!pr) continue;
+    if (normalized.length >= MAX_DEPENDENCY_PRS) {
+      truncated = true;
+      break;
+    }
+    normalized.push(pr);
+  }
+
+  if (truncated) {
+    warnings.push(
+      "Dependency PR evidence truncated at " +
+        MAX_DEPENDENCY_PRS +
+        " recognized bot pull requests.",
+    );
+  }
+  return normalized.sort((a, b) => a.number - b.number);
+}
+
 export function collectDependencyPullRequestEvidence(
   pulls,
   maxDependenciesPerBatch,
@@ -234,78 +317,10 @@ export function collectDependencyPullRequestEvidence(
   }
 
   const warnings = [];
-  const normalized = [];
-  for (const pull of Array.isArray(pulls) ? pulls : []) {
-    if (normalized.length >= MAX_DEPENDENCY_PRS) break;
-    const pr = normalizedPull(pull, warnings);
-    if (pr) normalized.push(pr);
-  }
-  normalized.sort((a, b) => a.number - b.number);
-
-  const buckets = new Map();
-  const lanes = [];
-  for (const pr of normalized) {
-    const isolate =
-      pr.updateScope === "major" ||
-      pr.updateScope === "group" ||
-      pr.updateScope === "unknown" ||
-      pr.ecosystem === "unknown" ||
-      pr.dependencyCountHint > maximum;
-    if (isolate) {
-      lanes.push(
-        laneRecord(
-          laneKey(pr) + ":pr-" + pr.number,
-          [pr],
-          maximum,
-        ),
-      );
-      continue;
-    }
-
-    const key = laneKey(pr);
-    const bucket = buckets.get(key) || [];
-    const currentCount = bucket.reduce(
-      (total, item) => total + laneCapacity(item),
-      0,
-    );
-    if (
-      bucket.length > 0 &&
-      currentCount + laneCapacity(pr) > maximum
-    ) {
-      lanes.push(
-        laneRecord(
-          key + ":batch-" + (lanes.filter((lane) => lane.id.startsWith(key + ":batch-")).length + 1),
-          bucket,
-          maximum,
-        ),
-      );
-      buckets.set(key, [pr]);
-    } else {
-      bucket.push(pr);
-      buckets.set(key, bucket);
-    }
-  }
-
-  for (const [key, bucket] of buckets) {
-    if (!bucket.length) continue;
-    lanes.push(
-      laneRecord(
-        key + ":batch-" + (lanes.filter((lane) => lane.id.startsWith(key + ":batch-")).length + 1),
-        bucket,
-        maximum,
-      ),
-    );
-  }
-
-  lanes.sort((a, b) => {
-    const firstA = a.pullNumbers[0] || 0;
-    const firstB = b.pullNumbers[0] || 0;
-    return firstA - firstB;
-  });
-
+  const normalized = normalizeRecognizedPulls(pulls, warnings);
   return {
     pullRequests: normalized,
-    lanes,
+    lanes: planDependencyLanes(normalized, maximum),
     warnings: [...new Set(warnings)],
   };
 }
