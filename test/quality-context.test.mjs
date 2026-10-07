@@ -156,3 +156,80 @@ analyzers:
   assert.match(result.text, /BLOCKING/);
 });
 
+test("includes bounded dependency PR discovery as read-only maintenance evidence", async () => {
+  const result = await fetchMaintenanceQualityContext(
+    {
+      repository: "owner/repo",
+      pullNumber: 9,
+      baseSha: "a".repeat(40),
+      headSha: "b".repeat(40),
+      baseBranch: "main",
+      token: "test-token",
+    },
+    {
+      checkRunsImpl: async () => [],
+      requiredChecksImpl: async () => ({
+        names: [],
+        sources: ["repository-rules"],
+        warnings: [],
+      }),
+      policyTextImpl: async () => `
+version: 1
+campaign:
+  max_iterations: 4
+  max_dependencies_per_batch: 2
+required_checks:
+  inherit_from_github: true
+`,
+      pullRequestsImpl: async () => [
+        {
+          number: 41,
+          state: "open",
+          title: "Bump alpha from 1.0.0 to 1.0.1",
+          html_url: "https://github.com/owner/repo/pull/41",
+          draft: false,
+          user: { login: "dependabot[bot]", type: "Bot" },
+          head: {
+            ref: "dependabot/npm_and_yarn/alpha-1.0.1",
+            sha: "c".repeat(40),
+          },
+          base: { ref: "main", sha: "a".repeat(40) },
+          labels: [{ name: "dependencies" }],
+        },
+        {
+          number: 42,
+          state: "open",
+          title: "Bump beta from 1.0.0 to 1.0.1",
+          html_url: "https://github.com/owner/repo/pull/42",
+          draft: false,
+          user: { login: "dependabot[bot]", type: "User" },
+          head: {
+            ref: "dependabot/npm_and_yarn/beta-1.0.1",
+            sha: "d".repeat(40),
+          },
+          base: { ref: "main", sha: "a".repeat(40) },
+          labels: [],
+        },
+      ],
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { data: [] };
+        },
+      }),
+    },
+  );
+
+  assert.equal(result.evidence.dependencyPullRequests.length, 1);
+  assert.equal(result.evidence.dependencyPullRequests[0].number, 41);
+  assert.equal(result.evidence.dependencyPullRequests[0].ecosystem, "npm");
+  assert.equal(result.evidence.dependencyPullRequests[0].updateScope, "patch");
+  assert.equal(result.evidence.dependencyPlan.readOnly, true);
+  assert.equal(result.evidence.dependencyPlan.maxDependenciesPerBatch, 2);
+  assert.deepEqual(result.evidence.dependencyPlan.lanes[0].pullNumbers, [41]);
+  assert.match(result.text, /Dependency PR evidence: 1 recognized bot PR/);
+  assert.match(result.text, /dependency PR #41/);
+  assert.match(result.text, /read-only planning evidence/);
+  assert.doesNotMatch(result.text, /dependency PR #42/);
+});
