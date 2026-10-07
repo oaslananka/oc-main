@@ -49,8 +49,123 @@ export async function runOpenCode({
       env: buildOpenCodeEnvironment(homeDir),
       timeoutMs,
       maxOutputBytes: 6_000_000,
+      rejectOnNonZero: false,
     },
   );
+}
+
+function parseOpenCodeEvents(output) {
+  const lines = String(output || "")
+    .split(/\\r?\\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return { valid: false, events: [] };
+
+  const events = [];
+  for (const line of lines) {
+    if (!line.startsWith("{")) return { valid: false, events: [] };
+    try {
+      const event = JSON.parse(line);
+      if (!event || typeof event !== "object" || Array.isArray(event)) {
+        return { valid: false, events: [] };
+      }
+      events.push(event);
+    } catch {
+      return { valid: false, events: [] };
+    }
+  }
+  return { valid: true, events };
+}
+
+function isCompletedTextEvent(event) {
+  return Boolean(
+    event?.type === "text" &&
+      event?.part?.type === "text" &&
+      typeof event.part.text === "string" &&
+      event.part.text.trim() &&
+      typeof event.part.time?.end === "number",
+  );
+}
+
+export function classifyOpenCodeResult({ stdout = "", stderr = "", code = 0 } = {}) {
+  const output = cleanOpenCodeOutput(stdout);
+  if (code === 0) {
+    return {
+      accepted: true,
+      recovered: false,
+      output,
+      reason: "exit-zero",
+      sessionErrorCount: 0,
+      terminalFinishObserved: false,
+    };
+  }
+
+  if (code !== 1) {
+    return { accepted: false, recovered: false, output, reason: "unexpected-exit-code" };
+  }
+  if (String(stderr || "").trim()) {
+    return { accepted: false, recovered: false, output, reason: "nonempty-stderr" };
+  }
+
+  const parsed = parseOpenCodeEvents(stdout);
+  if (!parsed.valid) {
+    return { accepted: false, recovered: false, output, reason: "invalid-json-stream" };
+  }
+
+  const { events } = parsed;
+  let lastErrorIndex = -1;
+  let sessionErrorCount = 0;
+  for (let index = 0; index < events.length; index += 1) {
+    if (events[index]?.type === "error") {
+      lastErrorIndex = index;
+      sessionErrorCount += 1;
+    }
+  }
+  if (lastErrorIndex < 0) {
+    return { accepted: false, recovered: false, output, reason: "unexplained-exit-one" };
+  }
+
+  let finalTextIndex = -1;
+  for (let index = lastErrorIndex + 1; index < events.length; index += 1) {
+    if (isCompletedTextEvent(events[index])) finalTextIndex = index;
+  }
+  if (finalTextIndex < 0) {
+    return { accepted: false, recovered: false, output, reason: "no-completed-text-after-error" };
+  }
+
+  const finalText = events[finalTextIndex];
+  const messageID = finalText.part.messageID;
+  let matchingStepStart = false;
+  for (let index = lastErrorIndex + 1; index < finalTextIndex; index += 1) {
+    const event = events[index];
+    if (event?.type === "step_start" && event?.part?.messageID === messageID) {
+      matchingStepStart = true;
+    }
+  }
+  if (!matchingStepStart) {
+    return { accepted: false, recovered: false, output, reason: "missing-final-step-start" };
+  }
+
+  let terminalFinishObserved = false;
+  for (let index = finalTextIndex + 1; index < events.length; index += 1) {
+    const event = events[index];
+    if (event?.type !== "step_finish" || event?.part?.messageID !== messageID) {
+      return { accepted: false, recovered: false, output, reason: "unexpected-event-after-final-text" };
+    }
+    if (event.part.reason !== "stop") {
+      return { accepted: false, recovered: false, output, reason: "nonterminal-final-finish" };
+    }
+    terminalFinishObserved = true;
+  }
+
+  return {
+    accepted: true,
+    recovered: true,
+    output,
+    reason: "recovered-session-error",
+    sessionErrorCount,
+    terminalFinishObserved,
+  };
 }
 
 export function buildAgentPrompt({
