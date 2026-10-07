@@ -426,5 +426,8 @@
   },
   "skills": [
     "~/.config/opencode/skills"
+  ],
+  "instructions": [
+    "~/.config/opencode/AGENTS.md"
   ]
 }
