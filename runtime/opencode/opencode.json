@@ -1,7 +1,7 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "share": "disabled",
-  "autoupdate": false,
+  "update": "disable",
   "default_agent": "orchestrator",
   "formatter": false,
   "lsp": true,
@@ -9,47 +9,99 @@
     "max_lines": 1200,
     "max_bytes": 120000
   },
-  "permission": {
-    "external_directory": "deny",
-    "question": "deny",
-    "skill": {
-      "*": "deny",
-      "oc-*": "allow"
+  "permissions": [
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "deny"
     },
-    "bash": {
-      "*": "allow",
-      "*git push*": "deny",
-      "*git commit*": "deny",
-      "*git remote*": "deny",
-      "gh *": "deny",
-      "ssh *": "deny",
-      "scp *": "deny",
-      "rsync *": "deny"
+    {
+      "action": "question",
+      "resource": "*",
+      "effect": "deny"
     },
-    "task": "deny"
-  },
-  "agent": {
+    {
+      "action": "skill",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "oc-*",
+      "effect": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "*",
+      "effect": "allow"
+    },
+    {
+      "action": "bash",
+      "resource": "*git push*",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "*git commit*",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "*git remote*",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "gh *",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "ssh *",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "scp *",
+      "effect": "deny"
+    },
+    {
+      "action": "bash",
+      "resource": "rsync *",
+      "effect": "deny"
+    },
+    {
+      "action": "task",
+      "resource": "*",
+      "effect": "deny"
+    }
+  ],
+  "agents": {
     "build": {
-      "disable": true
+      "disabled": true
     },
     "plan": {
-      "disable": true
+      "disabled": true
     },
     "general": {
-      "disable": true
+      "disabled": true
     },
     "explore": {
-      "disable": true
+      "disabled": true
     },
     "scout": {
-      "disable": true
+      "disabled": true
     }
   },
   "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
-      "enabled": true
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "oauth": false,
+        "disabled": false,
+        "protocol": "legacy"
+      }
     }
   }
 }
