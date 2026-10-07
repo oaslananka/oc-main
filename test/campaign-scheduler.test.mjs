@@ -26,6 +26,20 @@ function evidence(overrides = {}) {
       missingRequiredCount: 0,
       requiredReady: true,
     },
+    checks: [
+      {
+        name: "build",
+        state: "success",
+        blocking: false,
+        requiredBy: ["github-live"],
+      },
+      {
+        name: "security",
+        state: "success",
+        blocking: false,
+        requiredBy: ["analyzer-policy"],
+      },
+    ],
     findings: [],
     ...overrides,
   };
@@ -120,6 +134,54 @@ test("missing required checks require owner review rather than auto retry", () =
   assert.equal(result.dispatchEligible, false);
 });
 
+test("cancelled required checks require owner review", () => {
+  const result = decide({
+    evidence: evidence({
+      checkSummary: {
+        requiredCount: 2,
+        blockingCount: 1,
+        pendingRequiredCount: 0,
+        missingRequiredCount: 0,
+        requiredReady: false,
+      },
+      checks: [
+        {
+          name: "build",
+          state: "cancelled",
+          blocking: true,
+          requiredBy: ["github-live"],
+        },
+        {
+          name: "security",
+          state: "success",
+          blocking: false,
+          requiredBy: ["analyzer-policy"],
+        },
+      ],
+    }),
+  });
+  assert.equal(result.action, "owner-review");
+  assert.equal(result.reason, "required-checks-cancelled");
+  assert.equal(result.dispatchEligible, false);
+});
+
+test("ambiguous blocking summary requires owner review", () => {
+  const result = decide({
+    evidence: evidence({
+      checkSummary: {
+        requiredCount: 2,
+        blockingCount: 1,
+        pendingRequiredCount: 0,
+        missingRequiredCount: 0,
+        requiredReady: false,
+      },
+      checks: [],
+    }),
+  });
+  assert.equal(result.action, "owner-review");
+  assert.equal(result.reason, "blocking-check-cause-ambiguous");
+});
+
 test("settled current-head blocking evidence is retry eligible", () => {
   const result = decide({
     evidence: evidence({
@@ -130,6 +192,20 @@ test("settled current-head blocking evidence is retry eligible", () => {
         missingRequiredCount: 0,
         requiredReady: false,
       },
+      checks: [
+        {
+          name: "build",
+          state: "failure",
+          blocking: true,
+          requiredBy: ["github-live"],
+        },
+        {
+          name: "security",
+          state: "success",
+          blocking: false,
+          requiredBy: ["analyzer-policy"],
+        },
+      ],
       findings: [{ blocking: true }, { blocking: false }],
     }),
   });
