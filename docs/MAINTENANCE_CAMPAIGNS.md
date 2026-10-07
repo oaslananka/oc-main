@@ -83,7 +83,7 @@ The VPS controller accepts only a canonical `oaslananka-ops[bot]` edited PR comm
 
 The original owner-authorized maintenance task and selected allowed model are stored inside version-2 signed campaign state when the issue campaign is created. Automatic continuation reuses those signed values; it does not synthesize an owner comment and does not trust model/provider text as the new task. Legacy/manual-only campaign state remains non-automatic.
 
-Automatic dispatch reuses the existing signed manifest plus `repository_dispatch` transport. Manifest v3 binds trigger kind and campaign iteration. Trusted prepare re-checks the active signed iteration before OpenCode starts. Per-PR controller serialization plus the signed state reservation prevents duplicate/stale owner and automation routes from creating parallel iterations.
+Automatic dispatch reuses the existing signed manifest plus `repository_dispatch` transport. Manifest v3 binds trigger kind and campaign iteration. Trusted prepare re-checks the active signed iteration before OpenCode starts. The single production controller serializes all maintenance routing for a repository under one maintenance key, while GitHub Actions worker concurrency remains PR-scoped; that controller lock plus the signed state reservation prevents duplicate/stale owner and automation routes from creating parallel iterations.
 
 If `repository_dispatch` itself fails, trusted code rolls back only the exact reservation it created. The rollback status does not contain an automatic wakeup marker, so a dispatch outage cannot create an unbounded self-retry loop. Max-iteration policy is re-read from the PR base before each reservation.
 
