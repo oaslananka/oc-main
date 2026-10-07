@@ -162,7 +162,7 @@ analyzers:
 
 The parser intentionally accepts only a small YAML subset: mappings, scalar values, and scalar lists with two-space indentation. Anchors, tags, flow structures, multiline YAML features, unknown schema keys, invalid limits, and attempts to disable GitHub required-check inheritance are rejected. Invalid policy falls back to built-in defaults.
 
-Policy may guide prioritization and strengthen expectations. It never changes the signed execution capability profile or weakens live GitHub gates.
+Policy may guide prioritization and strengthen expectations. Analyzer policy may stay at its built-in authority or strengthen to `required`, and `block_new` severities may only stay the same or expand. Policy never changes the signed execution capability profile, downgrades built-in analyzer defaults, or weakens live GitHub gates.
 
 ## Built-in analyzer defaults
 
