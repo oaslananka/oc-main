@@ -35,9 +35,9 @@ test("model=auto uses mode router", () => {
 });
 
 test("keeps backwards compatible /oc prompt in auto mode", () => {
-  const parsed = parseCommand("/oc fix test.txt", config);
+  const parsed = parseCommand("/oc update test.txt", config);
   assert.equal(parsed.mode, "auto");
-  assert.equal(parsed.prompt, "fix test.txt");
+  assert.equal(parsed.prompt, "update test.txt");
 });
 
 test("ignores mentions that do not start the trimmed comment", () => {
