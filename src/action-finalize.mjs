@@ -10,7 +10,6 @@ import {
 import { commitChanges, hasChanges, pushHead } from "./git.mjs";
 import { finalizationDecision } from "./finalize-policy.mjs";
 import { readResult, readVerifiedJob } from "./action-state.mjs";
-import { isBlockedOutput } from "./task-policy.mjs";
 
 function truncate(text, limit = 5000) {
   const value = String(text || "");
@@ -64,7 +63,7 @@ async function main() {
   if (result.runStatus === "incomplete") {
     const message =
       result.output || result.error || "The requested change was not completed.";
-    await finishCampaign(job.expectedHead, isBlockedOutput(message));
+    await finishCampaign(job.expectedHead, false);
     await createPullRequestComment(
       job.repository,
       job.pullNumber,
@@ -90,7 +89,7 @@ async function main() {
   });
 
   if (decision === "blocked-read-only") {
-    await finishCampaign(job.expectedHead, true);
+    await finishCampaign(job.expectedHead, false);
     await createPullRequestComment(job.repository, job.pullNumber,
       "Run blocked (" + runLabel(job) + "). The selected mode is read-only but the agent produced tracked-file changes, so nothing was pushed.\n\n" + truncate(result.output), baseToken);
     return;
