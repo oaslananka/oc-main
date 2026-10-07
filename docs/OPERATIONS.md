@@ -36,7 +36,6 @@ Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`,
 
 The worker copies only `runtime/opencode/` into an isolated HOME and runs with:
 
-- `--pure`;
 - `OPENCODE_DISABLE_PROJECT_CONFIG=1`;
 - `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`;
 - `OPENCODE_DISABLE_CLAUDE_CODE=1`;
