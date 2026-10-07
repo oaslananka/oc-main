@@ -15,6 +15,7 @@ test("OpenCode worker environment uses native v2 isolation controls", () => {
     "OPENCODE_DISABLE_CLAUDE_CODE",
     "OPENCODE_DISABLE_LSP_DOWNLOAD",
     "OPENCODE_DISABLE_EXTERNAL_SKILLS",
+    "OPENCODE_CLIENT",
     "DOPPLER_TOKEN",
   ]) {
     assert.equal(
