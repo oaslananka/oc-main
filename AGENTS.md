@@ -18,7 +18,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 - Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`. An allowlisted owner may also start `maintenance` from an ordinary issue; the trusted controller first creates a source-comment-bound campaign branch and draft PR, writes an HMAC-signed campaign-state marker into the PR body, reserves a bounded iteration, then dispatches the normal signed PR worker flow.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
-- The trusted prepare stage may attach bounded analyzer/check findings as untrusted evidence; analyzer text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available. Campaign prepare also verifies the signed PR-body state, active source comment, exact expected head, and reserved iteration before OpenCode starts.
+- The trusted prepare stage may attach bounded analyzer/check findings plus recognized dependency-bot PR metadata as untrusted evidence; analyzer/bot text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available. Dependency PR discovery is read-only and may produce bounded lane suggestions only. Campaign prepare also verifies the signed PR-body state, active source comment, exact expected head, and reserved iteration before OpenCode starts.
 - High-risk edit-capable jobs use a built-in `plan` pass followed by built-in `build`; edit-required modes fail incomplete after one bounded retry if no tracked change is produced.
 - OpenCode process exits remain fail-closed by default. Exit code 1 is recoverable only when the structured JSON stream proves a session error was followed by a later completed assistant turn with no stderr; edit-required modes still require tracked changes and the trusted finalizer gates still apply.
 - `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
@@ -67,6 +67,7 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 - Use array-based process spawning; never interpolate webhook text into a shell command.
 - Re-check PR head immediately before push and never force-push.
 - Maintenance campaign state is HMAC-signed with trusted control-plane material, bounded by the base policy's `campaign.max_iterations`, and must match the exact PR head/comment/iteration at prepare and finalize. A 45-minute reservation lease prevents a controller crash from leaving a campaign permanently busy.
+- Dependency PR discovery accepts only recognized GitHub Bot actors (`dependabot[bot]`, `renovate[bot]`) and is evidence-only. Do not add close, retarget, supersede, merge, or cancellation authority to the discovery path.
 - Do not add GitHub repository secrets other than `DOPPLER_TOKEN`.
 
 ## Change discipline
