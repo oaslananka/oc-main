@@ -6,7 +6,7 @@ import {
 } from "../src/task-policy.mjs";
 
 test("edit modes require a tracked change", () => {
-  for (const mode of ["fix", "apply", "ci", "release", "refactor"]) {
+  for (const mode of ["fix", "apply", "ci", "release", "refactor", "maintenance"]) {
     assert.equal(requiresTrackedChange(mode, true), true);
   }
 });
