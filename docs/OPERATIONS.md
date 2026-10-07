@@ -2,216 +2,124 @@
 
 ## Architecture
 
-`oc-main` uses two separate execution planes.
+`oc-main` has a lightweight VPS control plane and an ephemeral GitHub Actions worker plane.
 
 ### VPS control plane
 
-The Ubuntu VPS runs only:
+The Ubuntu VPS runs only the Node.js webhook/controller container plus Doppler CLI inside that image. OpenCode is not installed or executed by the VPS service, target repositories are not cloned there, and the controller has no Docker socket.
 
-- the lightweight Node.js webhook controller in Docker;
-- Doppler CLI inside that controller image.
+HTTPS is terminated by the existing shared Caddy edge. Stable public GitHub App webhook:
 
-HTTPS is terminated by the VPS's existing shared Caddy edge (`compose-caddy-1`), not by a second Caddy container in this stack.
+    https://webhook.oaslananka.dev/github
 
-The public endpoint is:
-
-`https://webhook.oaslananka.dev/github`
-
-The VPS does **not** run OpenCode and does not clone or build target repositories.
-
-The existing GitHub App may remain fully permissioned and subscribed to unrelated events for other owner systems. The controller verifies the webhook signature, then only interprets supported PR comment events. Unrelated deliveries are acknowledged and ignored.
+The logical oc-main consumer is `/github/oc-main`.
 
 ### GitHub Actions worker plane
 
-When the authorized owner writes `/oc` or `/opencode` on a PR, the VPS controller:
+An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, and dispatched to `oaslananka/oc-main` using `repository_dispatch` event `oc-run`.
 
-1. validates the GitHub webhook HMAC;
-2. checks the numeric GitHub user ID allowlist;
-3. parses the command and model allowlist;
-4. signs a short-lived worker payload;
-5. sends a GitHub `repository_dispatch` event to `oaslananka/oc-main`.
+The worker runs on GitHub-hosted Ubuntu and installs the real OpenCode CLI directly. Production runtime pin is OpenCode v2 `2.0.24`; the OpenCode GitHub Action is not used.
 
-The `opencode-worker` workflow then runs on a GitHub-hosted Ubuntu runner. It installs and runs the real OpenCode CLI directly; it does not use `anomalyco/opencode/github`.
+Prepare/finalize stages may use Doppler and short-lived GitHub App installation tokens. The OpenCode execution process receives none of those credentials.
 
-The worker:
+## Command surface
 
-1. validates the signed dispatch payload using Doppler configuration;
-2. creates short-lived GitHub App installation tokens;
-3. clones the target PR branch into the GitHub-hosted runner;
-4. runs OpenCode with a deliberately minimal environment that does not include Doppler or GitHub App credentials;
-5. checks that the PR head did not move while OpenCode was running;
-6. commits and pushes any requested changes without force-pushing;
-7. posts the result back to the target PR.
+Accepted prefixes: `/oc` and `/opencode`.
 
-Target repositories do not need an `oc-main` workflow or integration file.
+Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, `ci`.
+
+`plan`, `research`, `review`, `security`, `test`, and `explain` are read-only. The trusted finalizer refuses to push tracked changes from these modes.
+
+`model=<allowed-id>` pins an allowlisted model. `model=auto` or no model uses mode routing constrained by Doppler `ALLOWED_MODELS`.
+
+## OpenCode v2 runtime isolation
+
+The worker copies only `runtime/opencode/` into an isolated HOME and runs with:
+
+- `--pure`;
+- `OPENCODE_DISABLE_PROJECT_CONFIG=1`;
+- `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`;
+- `OPENCODE_DISABLE_CLAUDE_CODE=1`;
+- `OPENCODE_DISABLE_AUTOUPDATE=1`;
+- `OPENCODE_DISABLE_LSP_DOWNLOAD=1`;
+- `OPENCODE_DB=:memory:`.
+
+Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Target AGENTS.md content may be read manually as untrusted conventions only.
 
 ## GitHub App event handling
 
-The App can keep all permissions and subscriptions required by other systems.
+`oc-main` acts only on:
 
-`oc-main` currently acts only on:
+- `issue_comment` action `created` when the issue is a pull request;
+- `pull_request_review_comment` action `created`.
 
-- `issue_comment` with action `created`, where the issue is a pull request;
-- `pull_request_review_comment` with action `created`.
-
-Everything else is ignored by this service.
-
-The controller-to-worker dispatch uses event type:
-
-`oc-run`
-
-The GitHub App must be installed on the control repository and on each target repository that the worker should be able to read/write.
+Other App events are ignored by this consumer. The shared App may keep unrelated permissions and subscriptions.
 
 ## Doppler configuration
 
-Use Doppler project `oc-main`, config `main`.
+Use project `oc-main`, config `main`.
 
-Required keys:
+Required/meaningful keys:
 
-```text
-PORT=8787
-WEBHOOK_PATH=/oaslananka-ops
+    PORT=8787
+    WEBHOOK_PATH=/github/oc-main
+    GITHUB_APP_ID=<id>
+    GITHUB_APP_PRIVATE_KEY_BASE64=<base64 PEM>
+    GITHUB_WEBHOOK_SECRET=<secret>
+    WORKER_DISPATCH_SECRET=<random 32+ byte secret>
+    CONTROL_REPOSITORY=oaslananka/oc-main
+    ALLOWED_GITHUB_USER_IDS=285490571
+    DEFAULT_MODEL=opencode/nemotron-3.5-lightning-free
+    ALLOWED_MODELS=<comma-separated allowlist>
+    OPENCODE_TIMEOUT_MS=1200000
 
-GITHUB_APP_ID=<github app id>
-GITHUB_APP_PRIVATE_KEY_BASE64=<base64 encoded PEM private key>
-GITHUB_WEBHOOK_SECRET=<github app webhook secret>
+Optional:
 
-WORKER_DISPATCH_SECRET=<random 32+ byte secret>
-CONTROL_REPOSITORY=oaslananka/oc-main
+    GITHUB_INGRESS_PATH=/github
+    DISPATCH_EVENT_TYPE=oc-run
+    OPENCODE_BIN=/usr/local/bin/opencode
 
-ALLOWED_GITHUB_USER_IDS=285490571
-
-DEFAULT_MODEL=opencode/nemotron-3.5-lightning-free
-ALLOWED_MODELS=opencode/nemotron-3.5-lightning-free,opencode/nemotron-3-ultra-free,opencode/mimo-v2.6-flash-free,opencode/mimo-v2.5-free,opencode/muse-spark-1.3-contributor-free,opencode/big-pickle
-
-OPENCODE_TIMEOUT_MS=1200000
-```
-
-Optional keys:
-
-```text
-DISPATCH_EVENT_TYPE=oc-run
-OPENCODE_BIN=/usr/local/bin/opencode
-```
-
-Generate the worker dispatch secret, for example:
-
-```bash
-openssl rand -hex 32
-```
-
-The raw GitHub App PEM must not be committed. Store its single-line base64 representation in Doppler.
+Do not place secret values in documentation or Context Ledger.
 
 ## Bootstrap secret boundary
 
-GitHub repository secrets:
+GitHub repository secrets: `DOPPLER_TOKEN` only.
 
-```text
-DOPPLER_TOKEN
-```
-
-VPS bootstrap file:
-
-```text
-/etc/oc-main/runtime-bootstrap
-```
-
-Both contain a read-only Doppler Service Token scoped to `oc-main/main`.
-
-All application configuration and GitHub App secrets remain in Doppler. Do not mirror them into GitHub Secrets.
+VPS bootstrap file: `/etc/oc-main/runtime-bootstrap` containing a read-only Doppler service token scoped to `oc-main/main`.
 
 ## VPS deployment
 
-The intended directory is:
+Production checkout:
 
-```text
-/home/ubuntu/Desktop/test_all
-```
+    /home/ubuntu/Desktop/test_all
 
-Prerequisites:
+Deploy current main:
 
-- Docker Engine;
-- Docker Compose plugin;
-- the existing external Docker network `oaslananka-frontdoor`;
-- the existing shared Caddy edge attached to that network;
-- Cloudflare DNS for `webhook.oaslananka.dev` pointing to the VPS.
-
-`oc-main` must not bind host ports 80 or 443 because the existing `compose-caddy-1` already owns them.
-
-Create the bootstrap token file:
-
-```bash
-sudo install -d -m 0700 /etc/oc-main
-
-printf '%s' 'dp.st....' | sudo tee /etc/oc-main/runtime-bootstrap >/dev/null
-sudo chown 1000:1000 /etc/oc-main/runtime-bootstrap
-sudo chmod 0400 /etc/oc-main/runtime-bootstrap
-```
-
-Deploy:
-
-```bash
-cd /home/ubuntu/Desktop/test_all
-git clone https://github.com/oaslananka/oc-main.git .
-
-# Until PR #8 is merged:
-git checkout infra/doppler-runtime
-
-sudo ./scripts/compose.sh build
-sudo ./scripts/compose.sh up -d
-sudo ./scripts/compose.sh ps
-```
+    cd /home/ubuntu/Desktop/test_all
+    git fetch origin main
+    git checkout main
+    git pull --ff-only origin main
+    sudo ./scripts/compose.sh build
+    sudo ./scripts/compose.sh up -d
+    sudo ./scripts/compose.sh ps
 
 Logs:
 
-```bash
-sudo ./scripts/compose.sh logs -f controller
-```
+    sudo ./scripts/compose.sh logs -f controller
 
-The public GitHub App webhook terminates at the controller's stable `/github` ingress. The same process routes the unchanged raw body to the named `/github/oc-main` consumer, which performs the HMAC and owner-command checks. The container is attached to the existing `oaslananka-frontdoor` network as `oc-main-github-router`. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service.
-
-Stop:
-
-```bash
-sudo ./scripts/compose.sh down
-```
-
-Start:
-
-```bash
-sudo ./scripts/compose.sh up -d
-```
-
-The controller container is intentionally lightweight. It has no OpenCode installation and no Docker socket mount.
-
-## Cloudflare and GitHub App
-
-Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact public path `/github` to `oc-main-github-router:8787`.
-
-The GitHub App webhook URL is the stable shared ingress:
-
-```text
-https://webhook.oaslananka.dev/oaslananka-ops
-```
-
-The `/github` ingress is the stable routing point. Today it routes only to `/github/oc-main`. Future consumers can be added without changing the GitHub App webhook URL; each consumer must receive the original raw body and GitHub headers and verify the GitHub signature independently.
+The existing shared Caddy config is `/opt/oaslananka-agent/current/infra/compose/Caddyfile`; do not launch a competing Caddy on ports 80/443.
 
 ## GitHub Actions security boundary
 
-The `opencode-worker` workflow uses Doppler only in the prepare/finalize steps.
+The control repository checkout uses `persist-credentials: false`. OpenCode receives no Doppler token, GitHub App private key, webhook secret, installation token, or persisted GitHub checkout credential.
 
-The OpenCode execution step itself receives no:
+Before pushing, the trusted finalizer requires the PR head SHA to equal the prepared snapshot. Pushes are never forced. Commits produced by the finalizer use the `oaslananka-ops[bot]` identity.
 
-- `DOPPLER_TOKEN`;
-- GitHub App private key;
-- webhook secret;
-- installation token;
-- persisted `actions/checkout` credential.
+## MCP
 
-The control repository checkout sets `persist-credentials: false`.
+Context7 is scaffolded but disabled in the trusted runtime. Enabling any MCP requires a deliberate least-privilege credential and permission review. Never expose control-plane write credentials to an MCP running inside OpenCode.
 
-The target PR is revalidated before push, and pushes are never forced.
+## Current limitations
 
-## Current limitation
-
-Webhook delivery de-duplication is in-memory on the VPS controller and does not survive a container restart. For the initial owner-only deployment this is acceptable; a durable store can be added later if needed.
+- Webhook delivery de-duplication remains in-memory on the VPS controller.
+- The shared `/github` routing implementation is currently co-located with the oc-main controller while oc-main is the sole consumer; shared multi-consumer extraction is tracked separately in Context Ledger.
