@@ -2,14 +2,44 @@ import crypto from "node:crypto";
 import { capabilityProfile, isSupportedMode } from "./capabilities.mjs";
 
 const MAX_JOB_AGE_SECONDS = 30 * 60;
+const CURRENT_MANIFEST_VERSION = 3;
+const TRIGGER_KINDS = new Set(["owner-comment", "automation-status"]);
 
-function material(payload) {
+function legacyMaterial(payload) {
   return JSON.stringify([
     2, payload.repository, payload.pull_number, payload.comment_id,
     payload.comment_user_id, payload.model, payload.mode, payload.agent,
     payload.risk, payload.allow_edits, payload.capabilities, payload.prompt,
     payload.review_context ?? null, payload.issued_at, payload.nonce,
   ]);
+}
+
+function currentMaterial(payload) {
+  return JSON.stringify([
+    CURRENT_MANIFEST_VERSION,
+    payload.repository,
+    payload.pull_number,
+    payload.comment_id,
+    payload.comment_user_id,
+    payload.trigger_kind,
+    payload.campaign_iteration ?? null,
+    payload.model,
+    payload.mode,
+    payload.agent,
+    payload.risk,
+    payload.allow_edits,
+    payload.capabilities,
+    payload.prompt,
+    payload.review_context ?? null,
+    payload.issued_at,
+    payload.nonce,
+  ]);
+}
+
+function material(payload) {
+  return Number(payload.manifest_version || 2) === CURRENT_MANIFEST_VERSION
+    ? currentMaterial(payload)
+    : legacyMaterial(payload);
 }
 
 function signature(payload, secret) {
@@ -22,67 +52,158 @@ function positiveInteger(value, label) {
   return number;
 }
 
+function nullablePositiveInteger(value, label) {
+  if (value === null || value === undefined) return null;
+  return positiveInteger(value, label);
+}
+
 function normalizedCapabilities(value) {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 20) throw new Error("Invalid worker capabilities");
+  if (!Array.isArray(value) || value.length === 0 || value.length > 20) {
+    throw new Error("Invalid worker capabilities");
+  }
   const result = value.map((item) => String(item || ""));
-  if (result.some((item) => !/^[a-z-]+$/.test(item))) throw new Error("Invalid worker capabilities");
+  if (result.some((item) => !/^[a-z-]+$/.test(item))) {
+    throw new Error("Invalid worker capabilities");
+  }
   return result;
+}
+
+function normalizedTriggerKind(value) {
+  const kind = String(value || "");
+  if (!TRIGGER_KINDS.has(kind)) throw new Error("Invalid worker trigger kind");
+  return kind;
+}
+
+function validateTriggerContract(payload) {
+  if (payload.trigger_kind === "automation-status") {
+    if (payload.mode !== "maintenance" || !payload.campaign_iteration) {
+      throw new Error("Automatic worker trigger requires a maintenance campaign iteration");
+    }
+  }
 }
 
 export function createSignedJob(trigger, command, secret) {
   const profile = capabilityProfile(command.mode, command.prompt);
   const unsigned = {
+    manifest_version: CURRENT_MANIFEST_VERSION,
     repository: trigger.repository,
     pull_number: positiveInteger(trigger.pullNumber, "pull number"),
     comment_id: positiveInteger(trigger.commentId, "comment ID"),
     comment_user_id: positiveInteger(trigger.commentUserId, "comment user ID"),
-    model: command.model, mode: profile.mode, agent: profile.agent,
-    risk: profile.risk, allow_edits: profile.allowEdits, capabilities: profile.capabilities,
-    prompt: command.prompt, review_context: trigger.reviewContext ?? null,
-    issued_at: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    trigger_kind: normalizedTriggerKind(trigger.triggerKind || "owner-comment"),
+    campaign_iteration: nullablePositiveInteger(
+      trigger.campaignIteration,
+      "campaign iteration",
+    ),
+    model: command.model,
+    mode: profile.mode,
+    agent: profile.agent,
+    risk: profile.risk,
+    allow_edits: profile.allowEdits,
+    capabilities: profile.capabilities,
+    prompt: command.prompt,
+    review_context: trigger.reviewContext ?? null,
+    issued_at: Math.floor(Date.now() / 1000),
+    nonce: crypto.randomUUID(),
   };
+  validateTriggerContract(unsigned);
   return { ...unsigned, signature: signature(unsigned, secret) };
 }
 
-export function verifySignedJob(payload, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
-  if (!payload || typeof payload !== "object") throw new Error("Worker payload is missing");
+export function verifySignedJob(
+  payload,
+  secret,
+  nowSeconds = Math.floor(Date.now() / 1000),
+) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Worker payload is missing");
+  }
+  const version = Number(payload.manifest_version || 2);
+  if (version !== 2 && version !== CURRENT_MANIFEST_VERSION) {
+    throw new Error("Unsupported worker manifest version");
+  }
   const mode = String(payload.mode || "");
   if (!isSupportedMode(mode)) throw new Error("Invalid worker mode");
 
   const normalized = {
+    ...(version === CURRENT_MANIFEST_VERSION
+      ? { manifest_version: CURRENT_MANIFEST_VERSION }
+      : {}),
     repository: String(payload.repository || ""),
     pull_number: positiveInteger(payload.pull_number, "pull number"),
     comment_id: positiveInteger(payload.comment_id, "comment ID"),
     comment_user_id: positiveInteger(payload.comment_user_id, "comment user ID"),
-    model: String(payload.model || ""), mode, agent: String(payload.agent || ""),
-    risk: String(payload.risk || ""), allow_edits: payload.allow_edits === true,
+    ...(version === CURRENT_MANIFEST_VERSION
+      ? {
+          trigger_kind: normalizedTriggerKind(payload.trigger_kind),
+          campaign_iteration: nullablePositiveInteger(
+            payload.campaign_iteration,
+            "campaign iteration",
+          ),
+        }
+      : {}),
+    model: String(payload.model || ""),
+    mode,
+    agent: String(payload.agent || ""),
+    risk: String(payload.risk || ""),
+    allow_edits: payload.allow_edits === true,
     capabilities: normalizedCapabilities(payload.capabilities),
-    prompt: String(payload.prompt || ""), review_context: payload.review_context ?? null,
-    issued_at: positiveInteger(payload.issued_at, "issued_at"), nonce: String(payload.nonce || ""),
+    prompt: String(payload.prompt || ""),
+    review_context: payload.review_context ?? null,
+    issued_at: positiveInteger(payload.issued_at, "issued_at"),
+    nonce: String(payload.nonce || ""),
   };
 
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized.repository)) throw new Error("Invalid worker repository");
-  if (!normalized.model || !normalized.prompt || normalized.prompt.length > 20_000) throw new Error("Invalid worker model or prompt");
-  if (!/^[0-9a-f-]{36}$/i.test(normalized.nonce)) throw new Error("Invalid worker nonce");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized.repository)) {
+    throw new Error("Invalid worker repository");
+  }
+  if (!normalized.model || !normalized.prompt || normalized.prompt.length > 20_000) {
+    throw new Error("Invalid worker model or prompt");
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(normalized.nonce)) {
+    throw new Error("Invalid worker nonce");
+  }
 
   const profile = capabilityProfile(normalized.mode, normalized.prompt);
-  if (normalized.agent !== profile.agent || normalized.risk !== profile.risk ||
-      normalized.allow_edits !== profile.allowEdits ||
-      JSON.stringify(normalized.capabilities) !== JSON.stringify(profile.capabilities)) {
+  if (
+    normalized.agent !== profile.agent ||
+    normalized.risk !== profile.risk ||
+    normalized.allow_edits !== profile.allowEdits ||
+    JSON.stringify(normalized.capabilities) !== JSON.stringify(profile.capabilities)
+  ) {
     throw new Error("Worker capability profile is invalid");
+  }
+  if (version === CURRENT_MANIFEST_VERSION) {
+    validateTriggerContract(normalized);
   }
 
   const age = nowSeconds - normalized.issued_at;
-  if (age < -60 || age > MAX_JOB_AGE_SECONDS) throw new Error("Worker payload is expired");
+  if (age < -60 || age > MAX_JOB_AGE_SECONDS) {
+    throw new Error("Worker payload is expired");
+  }
 
   const provided = String(payload.signature || "");
   const expected = signature(normalized, secret);
   const providedBuffer = Buffer.from(provided);
   const expectedBuffer = Buffer.from(expected);
-  if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
+  if (
+    providedBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(providedBuffer, expectedBuffer)
+  ) {
     throw new Error("Worker payload signature is invalid");
   }
-  return normalized;
+  return {
+    ...normalized,
+    trigger_kind:
+      version === CURRENT_MANIFEST_VERSION
+        ? normalized.trigger_kind
+        : "owner-comment",
+    campaign_iteration:
+      version === CURRENT_MANIFEST_VERSION
+        ? normalized.campaign_iteration
+        : null,
+    manifest_version: version,
+  };
 }
 
 export function wrapSignedJob(job) {
