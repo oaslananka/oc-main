@@ -55,6 +55,7 @@ function observationLease(state) {
 }
 
 function sameObservationLease(origin, current) {
+  if (!current) return false;
   const left = observationLease(origin);
   const right = observationLease(current);
   return (
