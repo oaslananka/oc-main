@@ -56,7 +56,7 @@ export async function runOpenCode({
 
 function parseOpenCodeEvents(output) {
   const lines = String(output || "")
-    .split(/\\r?\\n/)
+    .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   if (!lines.length) return { valid: false, events: [] };
