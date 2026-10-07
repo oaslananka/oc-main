@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiPath, requiredChecksApiPaths } from "../src/github.mjs";
+import { apiPath, installationTokenRequestBody, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -56,3 +56,41 @@ test("required-check discovery rejects unsafe branch names", () => {
     );
   }
 });
+
+test("installation tokens are scoped to one repository and explicit permissions", () => {
+  assert.deepEqual(
+    installationTokenRequestBody("owner/repo", {
+      contents: "read",
+      pull_requests: "read",
+    }),
+    {
+      repositories: ["repo"],
+      permissions: {
+        contents: "read",
+        pull_requests: "read",
+      },
+    },
+  );
+});
+
+test("installation token policy rejects unscoped or broad permissions", () => {
+  assert.throws(
+    () => installationTokenRequestBody("owner/repo", {}),
+    /requires explicit permissions/,
+  );
+  assert.throws(
+    () =>
+      installationTokenRequestBody("owner/repo", {
+        secrets: "write",
+      }),
+    /Unsupported GitHub installation token permission/,
+  );
+  assert.throws(
+    () =>
+      installationTokenRequestBody("owner/repo", {
+        administration: "write",
+      }),
+    /Unsupported GitHub installation token permission/,
+  );
+});
+

@@ -45,6 +45,7 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 - Only trusted runtime skills prefixed `oc-` may be loaded.
 - Built-in `plan` remains edit-denied. Read-only modes are also enforced by the trusted finalizer before push.
 - OpenCode receives no Doppler token, GitHub App private key, installation token, webhook secret, persisted checkout credential, or other control-plane write credential.
+- Trusted control-plane stages must mint GitHub App installation tokens with an explicit single-repository scope and the minimum stage-specific permission profile; never inherit the App registration's full permission set by default.
 - Git push/commit/remote/config commands, `gh`, SSH/SCP/rsync, external-directory access, questions, and subagent execution are denied by runtime policy as applicable.
 - Never publish, tag, release, deploy, or create GitHub resources from the OpenCode process. Trusted control-plane steps own those actions.
 
