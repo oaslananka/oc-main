@@ -77,6 +77,24 @@ Trusted prepare re-verifies the signed state and exact head before OpenCode star
 
 Campaign PRs remain maintenance workspaces. The generated `oc-maintenance-issue-…` branch namespace is reserved: if its signed marker is missing, malformed, duplicated, or has an invalid signature, controller/prepare logic fails closed rather than treating it as an ordinary PR. A signed campaign marker does not grant the model new capabilities, and a non-maintenance worker job against a campaign PR is rejected before OpenCode execution.
 
+## Sticky campaign status
+
+Each active issue-origin campaign maintains one controller-owned PR comment identified by a hidden v1 status marker and the canonical `oaslananka-ops[bot]` GitHub Bot identity. Controller/finalizer code updates that same comment across trusted transitions instead of appending status noise.
+
+The status projection contains only trusted identity/count data:
+
+- source issue and campaign PR;
+- trusted phase;
+- bounded iteration and exact expected-head prefix;
+- required-check counts and authority-complete/incomplete state;
+- normalized/blocking finding counts;
+- recognized dependency-PR and proposed-lane counts;
+- worker run ID when finalization runs inside GitHub Actions.
+
+Provider messages, repository text, dependency-bot titles/labels, and model output are not copied into the sticky status. They remain evidence only.
+
+Human comments, lookalike users, and other bot comments are never selected for overwrite even if they copy the hidden marker. If more than one canonical bot status comment exists, the status update refuses to choose between them. Status writes are observability only: a create/update failure is logged but never changes signed campaign state, iteration authority, exact-head validation, or finalizer behavior.
+
 ## Evidence snapshot
 
 Trusted prepare collects a bounded snapshot for the exact candidate/base pair.
@@ -218,7 +236,6 @@ The issue-origin initializer is implemented, but the following remain intentiona
 
 - mutating, closing, retargeting, or superseding dependency-bot PRs after the implemented read-only discovery/lane-proposal step;
 - automatically closing superseded dependency PRs;
-- updating sticky campaign status comments;
 - automatically scheduling the next campaign iteration after checks settle;
 - cancelling GitHub Actions runs;
 - changing draft/ready state;
