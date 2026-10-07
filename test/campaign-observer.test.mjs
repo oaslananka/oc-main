@@ -268,7 +268,7 @@ test("treats newly missing required checks as bounded settling grace", async () 
   assert.equal(result.decision.reason, "clean-settled-head");
   assert.deepEqual(
     harness.statusUpdates.map((status) => status.phase),
-    ["waiting-checks", "owner-review"],
+    ["waiting-checks", "owner-review-ready"],
   );
   assert.deepEqual(harness.sleeps, [5]);
 });
