@@ -15,10 +15,10 @@ This repository is the central control plane for an owner-operated GitHub engine
 
 - The Ubuntu VPS runs only the lightweight webhook/controller container. It never runs OpenCode, target builds, or target tests.
 - Stable public GitHub ingress is `https://webhook.oaslananka.dev/github`; oc-main is the logical `/github/oc-main` consumer.
-- Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`. An allowlisted owner may also start `maintenance` from an ordinary issue; the trusted controller first creates a source-comment-bound campaign branch and draft PR, then dispatches the normal signed PR worker flow.
+- Accepted owner commands become signed capability manifests and are sent to this repository with `repository_dispatch` event `oc-run`. An allowlisted owner may also start `maintenance` from an ordinary issue; the trusted controller first creates a source-comment-bound campaign branch and draft PR, writes an HMAC-signed campaign-state marker into the PR body, reserves a bounded iteration, then dispatches the normal signed PR worker flow.
 - `.github/workflows/opencode-worker.yml` runs the real OpenCode CLI on GitHub-hosted Ubuntu. Do not replace it with the OpenCode GitHub Action.
 - Runtime-wide trusted OpenCode v2 configuration and `oc-*` skills live under `runtime/opencode/`.
-- The trusted prepare stage may attach bounded analyzer/check findings as untrusted evidence; analyzer text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available.
+- The trusted prepare stage may attach bounded analyzer/check findings as untrusted evidence; analyzer text never becomes control-plane authority. Maintenance evidence is compared against the PR base, deduplicated, and classified against live GitHub required-check data plus the base-branch maintenance policy when available. Campaign prepare also verifies the signed PR-body state, active source comment, exact expected head, and reserved iteration before OpenCode starts.
 - High-risk edit-capable jobs use a built-in `plan` pass followed by built-in `build`; edit-required modes fail incomplete after one bounded retry if no tracked change is produced.
 - OpenCode process exits remain fail-closed by default. Exit code 1 is recoverable only when the structured JSON stream proves a session error was followed by a later completed assistant turn with no stderr; edit-required modes still require tracked changes and the trusted finalizer gates still apply.
 - `src/capabilities.mjs` maps command modes to signed risk/capability profiles and free-tier-compatible built-in execution agents.
@@ -66,6 +66,7 @@ Do not add custom runtime agents while the free-tier limitation remains. Re-enab
 - Repository dispatch transports the signed manifest as the single top-level `client_payload.job` envelope.
 - Use array-based process spawning; never interpolate webhook text into a shell command.
 - Re-check PR head immediately before push and never force-push.
+- Maintenance campaign state is HMAC-signed with trusted control-plane material, bounded by the base policy's `campaign.max_iterations`, and must match the exact PR head/comment/iteration at prepare and finalize. A 45-minute reservation lease prevents a controller crash from leaving a campaign permanently busy.
 - Do not add GitHub repository secrets other than `DOPPLER_TOKEN`.
 
 ## Change discipline
