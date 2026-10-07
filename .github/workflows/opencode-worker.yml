@@ -45,11 +45,23 @@ jobs:
         run: node src/action-run.mjs
 
       - name: Finalize target PR
+        id: finalize
         if: always() && steps.opencode.outcome != 'skipped'
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           doppler run --project oc-main --config main --             /usr/bin/env -u DOPPLER_TOKEN node src/action-finalize.mjs
+
+      - name: Observe current-head maintenance checks
+        if: always() && steps.finalize.outcome == 'success'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          doppler run --project oc-main --config main --             /usr/bin/env -u DOPPLER_TOKEN node src/action-observe.mjs
+
+      - name: Cleanup worker state
+        if: always()
+        run: rm -rf .oc-main-job
 
       - name: Fail workflow when OpenCode failed
         if: steps.opencode.outcome == 'failure'
