@@ -11,4 +11,9 @@ if [[ ! -r /etc/oc-main/runtime-bootstrap ]]; then
   exit 1
 fi
 
+if ! docker network inspect oaslananka-frontdoor >/dev/null 2>&1; then
+  echo "Missing external Docker network: oaslananka-frontdoor" >&2
+  exit 1
+fi
+
 exec docker compose -f compose.yml "$@"

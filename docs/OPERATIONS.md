@@ -8,9 +8,10 @@
 
 The Ubuntu VPS runs only:
 
-- Caddy for HTTPS;
 - the lightweight Node.js webhook controller in Docker;
 - Doppler CLI inside that controller image.
+
+HTTPS is terminated by the VPS's existing shared Caddy edge (`compose-caddy-1`), not by a second Caddy container in this stack.
 
 The public endpoint is:
 
@@ -131,14 +132,11 @@ Prerequisites:
 
 - Docker Engine;
 - Docker Compose plugin;
-- ports 80 and 443 available;
+- the existing external Docker network `oaslananka-frontdoor`;
+- the existing shared Caddy edge attached to that network;
 - Cloudflare DNS for `webhook.oaslananka.dev` pointing to the VPS.
 
-Check ports first:
-
-```bash
-sudo ss -ltnp '( sport = :80 or sport = :443 )'
-```
+`oc-main` must not bind host ports 80 or 443 because the existing `compose-caddy-1` already owns them.
 
 Create the bootstrap token file:
 
@@ -167,8 +165,10 @@ sudo ./scripts/compose.sh ps
 Logs:
 
 ```bash
-sudo ./scripts/compose.sh logs -f controller caddy
+sudo ./scripts/compose.sh logs -f controller
 ```
+
+The controller joins the existing external Docker network `oaslananka-frontdoor` with the alias `oc-main-webhook`. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service. The route proxies only `webhook.oaslananka.dev/oaslananka-ops` to `oc-main-webhook:8787`.
 
 Stop:
 
@@ -186,7 +186,7 @@ The controller container is intentionally lightweight. It has no OpenCode instal
 
 ## Cloudflare and GitHub App
 
-Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. Caddy terminates HTTPS and only proxies the exact path `/oaslananka-ops`.
+Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact path `/oaslananka-ops` to the `oc-main-webhook:8787` Docker-network alias.
 
 The GitHub App webhook URL for this service is:
 

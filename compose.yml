@@ -30,29 +30,11 @@ services:
       retries: 5
       start_period: 15s
     networks:
-      - webhook
-
-  caddy:
-    image: caddy:2.11.7-alpine
-    restart: unless-stopped
-    depends_on:
-      controller:
-        condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - webhook
-
-volumes:
-  caddy_data:
-  caddy_config:
+      frontdoor:
+        aliases:
+          - oc-main-webhook
 
 networks:
-  webhook:
-    driver: bridge
+  frontdoor:
+    external: true
+    name: oaslananka-frontdoor

@@ -1,11 +1,23 @@
 webhook.oaslananka.dev {
-	@oaslananka_ops path /oaslananka-ops
+	encode zstd gzip
 
+	@oaslananka_ops path /oaslananka-ops
 	handle @oaslananka_ops {
-		reverse_proxy controller:8787
+		header {
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "no-referrer"
+			X-Frame-Options "DENY"
+			-Server
+		}
+		reverse_proxy oc-main-webhook:8787
 	}
 
 	handle {
-		respond "not found" 404
+		respond 404
+	}
+
+	log {
+		output stdout
+		format json
 	}
 }
