@@ -34,3 +34,11 @@ test("model router falls back to configured default", () => {
   });
   assert.equal(model, "opencode/custom-free");
 });
+
+test("maintenance mode is high-risk, edit-capable, and routes to built-in build", () => {
+  const profile = capabilityProfile("maintenance", "remediate dependency and CI findings");
+  assert.equal(profile.risk, "high");
+  assert.equal(profile.allowEdits, true);
+  assert.equal(profile.agent, "build");
+  assert.equal(profile.capabilities.includes("edit"), true);
+});
