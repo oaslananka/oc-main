@@ -4,6 +4,8 @@ const CAMPAIGN_STATE_PREFIX = "<!-- oc-main-maintenance-campaign-state:";
 const CAMPAIGN_STATE_PATTERN =
   /<!-- oc-main-maintenance-campaign-state:([A-Za-z0-9_-]+):([0-9a-f]{64}) -->/g;
 const CAMPAIGN_LEASE_SECONDS = 45 * 60;
+const MAX_AUTO_TASK_PROMPT = 4_000;
+const AUTO_MODEL_PATTERN = /^[A-Za-z0-9._/-]{1,200}$/;
 
 function positiveInteger(value, label) {
   const number = Number(value);
@@ -34,12 +36,34 @@ function commitSha(value) {
   return sha;
 }
 
+function normalizedAutoTask(value) {
+  if (value === null || value === undefined) return null;
+  const prompt = String(value);
+  if (!prompt.trim() || prompt.length > MAX_AUTO_TASK_PROMPT) {
+    throw new Error("Invalid maintenance campaign automatic task prompt");
+  }
+  return prompt;
+}
+
+function normalizedAutoModel(value) {
+  if (value === null || value === undefined) return null;
+  const model = String(value);
+  if (!AUTO_MODEL_PATTERN.test(model)) {
+    throw new Error("Invalid maintenance campaign automatic model");
+  }
+  return model;
+}
+
 function normalizedState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Maintenance campaign state is missing");
   }
+  const version = Number(value.version);
+  if (version !== 1 && version !== 2) {
+    throw new Error("Unsupported maintenance campaign state version");
+  }
   const state = {
-    version: Number(value.version),
+    version,
     source_issue: positiveInteger(value.source_issue, "source issue"),
     source_comment_id: positiveInteger(
       value.source_comment_id,
@@ -59,9 +83,16 @@ function normalizedState(value) {
       "last comment ID",
     ),
     started_at: nullablePositiveInteger(value.started_at, "start time"),
+    auto_task_prompt:
+      version === 2 ? normalizedAutoTask(value.auto_task_prompt) : null,
+    auto_model:
+      version === 2 ? normalizedAutoModel(value.auto_model) : null,
   };
-  if (state.version !== 1) {
-    throw new Error("Unsupported maintenance campaign state version");
+  if (
+    version === 2 &&
+    ((state.auto_task_prompt === null) !== (state.auto_model === null))
+  ) {
+    throw new Error("Maintenance campaign automatic task metadata is incomplete");
   }
   if (state.in_flight) {
     if (
@@ -80,7 +111,7 @@ function normalizedState(value) {
 
 function stateMaterial(state) {
   const value = normalizedState(state);
-  return JSON.stringify([
+  const material = [
     value.version,
     value.source_issue,
     value.source_comment_id,
@@ -92,7 +123,11 @@ function stateMaterial(state) {
     value.active_comment_id,
     value.last_comment_id,
     value.started_at,
-  ]);
+  ];
+  if (value.version === 2) {
+    material.push(value.auto_task_prompt, value.auto_model);
+  }
+  return JSON.stringify(material);
 }
 
 function stateSignature(state, secret) {
@@ -120,7 +155,7 @@ function encodedState(state) {
 }
 
 function decodedState(encoded) {
-  if (!encoded || encoded.length > 4096) {
+  if (!encoded || encoded.length > 12_000) {
     throw new Error("Invalid maintenance campaign state payload");
   }
   let parsed;
@@ -155,9 +190,22 @@ export function createInitialMaintenanceCampaignState({
   commentId,
   pullNumber,
   headSha,
+  taskPrompt = null,
+  model = null,
 }) {
+  const prompt =
+    taskPrompt === null || taskPrompt === undefined
+      ? null
+      : String(taskPrompt);
+  const autoEligible =
+    prompt !== null &&
+    prompt.trim() &&
+    prompt.length <= MAX_AUTO_TASK_PROMPT &&
+    model !== null &&
+    model !== undefined &&
+    AUTO_MODEL_PATTERN.test(String(model));
   return normalizedState({
-    version: 1,
+    version: autoEligible ? 2 : 1,
     source_issue: issueNumber,
     source_comment_id: commentId,
     campaign_pr: pullNumber,
@@ -168,6 +216,8 @@ export function createInitialMaintenanceCampaignState({
     active_comment_id: null,
     last_comment_id: null,
     started_at: null,
+    auto_task_prompt: autoEligible ? prompt : null,
+    auto_model: autoEligible ? String(model) : null,
   });
 }
 
@@ -272,6 +322,63 @@ export function beginMaintenanceCampaignIteration(
   };
 }
 
+export function beginAutomaticMaintenanceCampaignIteration(
+  state,
+  {
+    triggerCommentId,
+    currentHead,
+    expectedIteration,
+    maxIterations,
+    nowSeconds,
+  },
+) {
+  const current = normalizedState(state);
+  const triggerComment = positiveInteger(
+    triggerCommentId,
+    "automatic trigger comment ID",
+  );
+  const head = commitSha(currentHead);
+  const expected = boundedIteration(expectedIteration);
+  const maximum = Number(maxIterations);
+  const startedAt = positiveInteger(nowSeconds, "start time");
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 8) {
+    throw new Error("Invalid maintenance campaign max iterations");
+  }
+
+  if (current.version !== 2 || !current.auto_task_prompt || !current.auto_model) {
+    return { action: "legacy", state: current };
+  }
+  if (current.terminal) {
+    return { action: "terminal", state: current };
+  }
+  if (current.in_flight) {
+    return { action: "busy", state: current };
+  }
+  if (current.expected_head !== head) {
+    return { action: "stale", state: current };
+  }
+  if (current.iteration !== expected) {
+    return { action: "superseded", state: current };
+  }
+  if (current.iteration >= maximum) {
+    return {
+      action: "limit",
+      state: normalizedState({ ...current, terminal: true }),
+    };
+  }
+
+  return {
+    action: "dispatch",
+    state: normalizedState({
+      ...current,
+      iteration: current.iteration + 1,
+      in_flight: true,
+      active_comment_id: triggerComment,
+      started_at: startedAt,
+    }),
+  };
+}
+
 function assertActiveIteration(
   state,
   { commentId, iteration, expectedHead },
@@ -294,7 +401,7 @@ function assertActiveIteration(
 
 export function assertActiveMaintenanceCampaignJob(
   state,
-  { pullNumber, commentId, headSha },
+  { pullNumber, commentId, headSha, campaignIteration = null },
 ) {
   const current = normalizedState(state);
   if (current.campaign_pr !== positiveInteger(pullNumber, "pull request")) {
@@ -305,7 +412,9 @@ export function assertActiveMaintenanceCampaignJob(
     !current.in_flight ||
     current.active_comment_id !==
       positiveInteger(commentId, "trigger comment ID") ||
-    current.expected_head !== commitSha(headSha)
+    current.expected_head !== commitSha(headSha) ||
+    (campaignIteration !== null &&
+      current.iteration !== boundedIteration(campaignIteration))
   ) {
     throw new Error("Maintenance campaign job state is stale");
   }
