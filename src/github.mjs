@@ -97,6 +97,13 @@ export const CAMPAIGN_CONTROL_TOKEN_PERMISSIONS = Object.freeze({
   pull_requests: "write",
 });
 
+export const MAINTENANCE_EVIDENCE_TOKEN_PERMISSIONS = Object.freeze({
+  administration: "read",
+  checks: "read",
+  contents: "read",
+  pull_requests: "read",
+});
+
 const TOKEN_PERMISSION_LEVELS = new Map([
   ["administration", new Set(["read"])],
   ["checks", new Set(["read"])],
