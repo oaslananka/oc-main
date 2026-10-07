@@ -12,10 +12,10 @@
 - Execution: `opencode run --agent <agent> --model <model> <prompt>`.
 - Session database: in-memory.
 - Auto-update: disabled.
-- Project OpenCode control surfaces: physically quarantined during execution.
-- External skill discovery: disabled where supported; the isolated HOME contains only trusted runtime skills.
-- Claude Code compatibility discovery: disabled.
-- Automatic LSP downloads: disabled; already-installed language servers may still be used.
+- Project OpenCode discovery: disabled with the v2-native `OPENCODE_CONFIG_PROJECT_DISABLE=1`.
+- Target OpenCode/Claude/agent control surfaces: physically quarantined during execution as an independent boundary.
+- Global discovery: confined to an isolated HOME/config root containing only the trusted runtime pack.
+- LSP: disabled in the native v2 runtime config to avoid unreviewed language-server execution/downloads.
 
 OpenCode v2.0.24 does not reliably honor the legacy project-config disable flag for all project config surfaces. oc-main therefore does not rely on that flag as a security boundary: project OpenCode/Claude/agent control files are moved out of the repository before the v2 process starts and restored afterward. This makes target repositories data rather than runtime authority.
 
