@@ -87,7 +87,7 @@ The researcher and trusted research skill may use OpenCode web search/web fetch 
 
 ## MCP
 
-`runtime/opencode/opencode.json` contains a disabled Context7 remote MCP scaffold. It is intentionally disabled until a dedicated low-privilege credential/authorization path is approved. Do not pass control-plane secrets into OpenCode merely to enable an MCP.
+`runtime/opencode/opencode.json` enables the hosted Context7 MCP using anonymous read-only documentation access. No Context7 credential is injected into the OpenCode process. Do not pass control-plane secrets into OpenCode merely to enable an MCP.
 
 Future MCPs should be read-only by default and registered centrally. Write-capable GitHub, deployment, secret-manager, or infrastructure MCPs must not be exposed to the OpenCode execution process; use trusted controller/finalizer actions instead.
 
