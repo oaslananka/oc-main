@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { runProcess } from "./process.mjs";
 
@@ -23,7 +22,6 @@ export function buildOpenCodeEnvironment(home) {
 }
 
 export async function runOpenCode({ repositoryDir, homeDir, opencodeBin, model, agent, prompt, timeoutMs }) {
-  if (!fs.existsSync(opencodeBin)) throw new Error("OpenCode CLI not found at " + opencodeBin);
   return runProcess(opencodeBin, ["run", "--standalone", "--agent", agent, "--model", model, prompt], {
     cwd: repositoryDir,
     env: buildOpenCodeEnvironment(homeDir),
@@ -34,7 +32,7 @@ export async function runOpenCode({ repositoryDir, homeDir, opencodeBin, model, 
 
 export function buildAgentPrompt({ repository, pullNumber, task, reviewContext, mode, risk, capabilities, allowEdits }) {
   const context = reviewContext?.path
-    ? "\\nThe command was issued on " + reviewContext.path + (reviewContext.line ? " near line " + reviewContext.line : "") + "."
+    ? "\nThe command was issued on " + reviewContext.path + (reviewContext.line ? " near line " + reviewContext.line : "") + "."
     : "";
 
   return [
@@ -63,11 +61,11 @@ export function buildAgentPrompt({ repository, pullNumber, task, reviewContext, 
       ? "- Keep repository edits scoped to the authorized task and validate them with repository-native checks."
       : "- This is a read-only mode. Do not modify tracked repository files.",
     "- Finish with a concise result: what you found or changed, validation performed, sources used when researching, and unresolved risks.",
-  ].filter(Boolean).join("\\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function cleanOpenCodeOutput(output) {
-  return String(output || "").replace(/\\x1B\\[[0-?]*[ -/]*[@-~]/g, "").trim();
+  return String(output || "").trim();
 }
 
 export function opencodeConfigHome(homeDir) {
