@@ -18,7 +18,7 @@ Logical consumer:
 
 ### GitHub Actions worker plane
 
-An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, wrapped as `client_payload.job`, and dispatched to `oaslananka/oc-main` with repository-dispatch event `oc-run`.
+An authorized PR comment is HMAC-verified, numeric-user allowlisted, parsed into a mode/model, converted to a signed capability manifest, wrapped as `client_payload.job`, and dispatched to `oaslananka/oc-main` with repository-dispatch event `oc-run`. For an ordinary issue, only an allowlisted owner `/oc maintenance` command is accepted: trusted controller code creates a source-comment-bound branch with a marker commit and a draft PR, comments the issue with that PR number, then dispatches the same signed PR worker flow.
 
 The worker runs on GitHub-hosted Ubuntu and installs the real OpenCode CLI directly. Production pin is OpenCode v2 `2.0.24`; the OpenCode GitHub Action is not used.
 
@@ -106,7 +106,7 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 ## GitHub Actions security boundary
 
 - control checkout uses `persist-credentials: false`;
-- trusted controller/prepare/finalize stages mint installation tokens with an explicit single-repository scope and stage-specific permissions instead of inheriting the GitHub App registration's full permission set;
+- trusted controller/prepare/finalize stages mint installation tokens with an explicit single-repository scope and stage-specific permissions instead of inheriting the GitHub App registration's full permission set; issue campaign bootstrap uses only `contents:write`, `issues:write`, and `pull_requests:write` on the target repository;
 - OpenCode receives no Doppler/GitHub App/installation/webhook credential;
 - external-directory access, unattended questions, subagents, Git push/commit/remote/config, `gh`, SSH/SCP/rsync are denied by native v2 policy;
 - read-only modes cannot be pushed by the trusted finalizer;
