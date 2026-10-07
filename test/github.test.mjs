@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiPath } from "../src/github.mjs";
+import { apiPath, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -29,4 +29,30 @@ test("apiPath rejects absolute URLs", () => {
     () => apiPath("https://example.com/anything"),
     /invalid GitHub API path/,
   );
+});
+
+test("required-check discovery safely encodes slash branch names", () => {
+  assert.deepEqual(requiredChecksApiPaths("owner/repo", "feature/maintenance-v1"), {
+    rules: "/repos/owner/repo/rules/branches/feature%2Fmaintenance-v1",
+    protection:
+      "/repos/owner/repo/branches/feature%2Fmaintenance-v1/protection/required_status_checks",
+  });
+});
+
+test("required-check discovery rejects unsafe branch names", () => {
+  for (const branch of [
+    "../main",
+    "feature//oops",
+    "/main",
+    "main/",
+    "refs/heads/../main",
+    "feature@{1}",
+    "locks.lock",
+  ]) {
+    assert.throws(
+      () => requiredChecksApiPaths("owner/repo", branch),
+      /Branch name is not supported/,
+      branch,
+    );
+  }
 });
