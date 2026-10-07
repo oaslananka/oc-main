@@ -1,14 +1,18 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.mjs";
-import { verifySignedJob } from "./dispatch.mjs";
+import { unwrapSignedJob, verifySignedJob } from "./dispatch.mjs";
 import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
 import { buildAgentPrompt } from "./opencode.mjs";
 import { writeJob } from "./action-state.mjs";
 
 const config = loadConfig();
-const payload = verifySignedJob(JSON.parse(process.env.OC_JOB_PAYLOAD || "{}"), config.workerDispatchSecret);
+const envelope = JSON.parse(process.env.OC_JOB_PAYLOAD || "{}");
+const payload = verifySignedJob(
+  unwrapSignedJob(envelope),
+  config.workerDispatchSecret,
+);
 
 if (!config.allowedUserIds.has(payload.comment_user_id)) throw new Error("Worker payload user is not allowlisted");
 if (!config.allowedModels.has(payload.model)) throw new Error("Worker payload model is not allowlisted");
