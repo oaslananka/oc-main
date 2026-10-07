@@ -19,6 +19,7 @@ test("trusted OpenCode v2 config is native and locked down", () => {
   assert.equal(config.default_agent, "orchestrator");
   assert.equal(config.share, "disabled");
   assert.equal(config.update, "disable");
+  assert.equal(config.lsp, false);
 
   assert.equal(hasRule(config, "external_directory", "*", "deny"), true);
   assert.equal(hasRule(config, "question", "*", "deny"), true);
