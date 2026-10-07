@@ -23,7 +23,7 @@ export function buildOpenCodeEnvironment(home) {
 
 export async function runOpenCode({ repositoryDir, homeDir, opencodeBin, model, agent, prompt, timeoutMs }) {
   if (!fs.existsSync(opencodeBin)) throw new Error("OpenCode CLI not found at " + opencodeBin);
-  return runProcess(opencodeBin, ["--pure", "run", "--agent", agent, "--model", model, prompt], {
+  return runProcess(opencodeBin, ["run", "--agent", agent, "--model", model, prompt], {
     cwd: repositoryDir,
     env: buildOpenCodeEnvironment(homeDir),
     timeoutMs,
