@@ -9,6 +9,10 @@ import {
   readMaintenanceCampaignState,
   writeMaintenanceCampaignState,
 } from "./campaign-state.mjs";
+import {
+  renderMaintenanceCampaignStatus,
+  selectMaintenanceCampaignStatusComment,
+} from "./campaign-status.mjs";
 import { resolveMaintenancePolicy } from "./maintenance-policy.mjs";
 
 const API_HOSTNAME = "api.github.com";
@@ -320,6 +324,75 @@ export async function createPullRequestComment(repository, pullNumber, body, tok
   return createIssueComment(repository, pullNumber, body, token);
 }
 
+async function listIssueComments(repository, issueNumber, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeIssueNumber = positiveId(issueNumber, "issue number");
+  const comments = [];
+  for (let page = 1; page <= 3; page += 1) {
+    const rows = await request(
+      `repos/${safeRepository}/issues/${safeIssueNumber}/comments?per_page=100&page=${page}`,
+      { token },
+    );
+    const pageComments = Array.isArray(rows) ? rows : [];
+    comments.push(...pageComments);
+    if (pageComments.length < 100) break;
+  }
+  return comments.slice(0, 300);
+}
+
+async function updateIssueComment(repository, commentId, body, token) {
+  const safeRepository = repositoryPath(repository);
+  const safeCommentId = positiveId(commentId, "comment ID");
+  return request(
+    `repos/${safeRepository}/issues/comments/${safeCommentId}`,
+    {
+      token,
+      method: "PATCH",
+      body: { body: String(body || "") },
+    },
+  );
+}
+
+export async function updateMaintenanceCampaignStatus(
+  repository,
+  pullNumber,
+  { state, maxIterations, phase, evidence = null, workerRunId = null },
+  token,
+) {
+  const body = renderMaintenanceCampaignStatus({
+    state,
+    maxIterations,
+    phase,
+    evidence,
+    workerRunId,
+  });
+  const comments = await listIssueComments(repository, pullNumber, token);
+  const existing = selectMaintenanceCampaignStatusComment(comments);
+  if (existing) {
+    return updateIssueComment(repository, existing.id, body, token);
+  }
+  return createPullRequestComment(repository, pullNumber, body, token);
+}
+
+export async function tryUpdateMaintenanceCampaignStatus(
+  repository,
+  pullNumber,
+  status,
+  token,
+) {
+  try {
+    return await updateMaintenanceCampaignStatus(
+      repository,
+      pullNumber,
+      status,
+      token,
+    );
+  } catch (error) {
+    console.error("maintenance campaign status update failed", error);
+    return null;
+  }
+}
+
 export function maintenanceCampaignBranchNames(issueNumber, commentId) {
   const issue = positiveId(issueNumber, "issue number");
   const comment = positiveId(commentId, "comment ID");
@@ -616,6 +689,16 @@ export async function beginMaintenanceCampaignDispatch(
       ),
       token,
     );
+    await tryUpdateMaintenanceCampaignStatus(
+      repository,
+      pullNumber,
+      {
+        state: transition.state,
+        maxIterations,
+        phase: transition.action === "limit" ? "terminal" : "dispatching",
+      },
+      token,
+    );
   }
 
   return {
@@ -631,7 +714,14 @@ export async function beginMaintenanceCampaignDispatch(
 
 export async function abortMaintenanceCampaignDispatch(
   config,
-  { repository, pullNumber, commentId, iteration, expectedHead },
+  {
+    repository,
+    pullNumber,
+    commentId,
+    iteration,
+    expectedHead,
+    maxIterations,
+  },
 ) {
   const token = await createRepositoryInstallationToken(
     config,
@@ -657,6 +747,16 @@ export async function abortMaintenanceCampaignDispatch(
       next,
       config.workerDispatchSecret,
     ),
+    token,
+  );
+  await tryUpdateMaintenanceCampaignStatus(
+    repository,
+    pullNumber,
+    {
+      state: next,
+      maxIterations,
+      phase: "dispatch-failed",
+    },
     token,
   );
   return true;
