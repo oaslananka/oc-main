@@ -49,3 +49,19 @@ export function extractPullRequestTrigger(eventName, payload) {
 
   return null;
 }
+export function extractIssueCommentTrigger(eventName, payload) {
+  if (eventName !== "issue_comment" || payload?.action !== "created") {
+    return null;
+  }
+  if (payload.issue?.pull_request) return null;
+  return {
+    repository: payload.repository?.full_name,
+    issueNumber: payload.issue?.number,
+    installationId: payload.installation?.id,
+    commentId: payload.comment?.id,
+    commentBody: payload.comment?.body,
+    commentUserId: payload.comment?.user?.id,
+    commentUserLogin: payload.comment?.user?.login,
+    reviewContext: null,
+  };
+}
