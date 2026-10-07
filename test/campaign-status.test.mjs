@@ -167,3 +167,24 @@ test("renders scheduler-owned waiting and owner-review phases", () => {
   assert.match(ready, /Current-head blocking evidence is retry eligible/);
   assert.match(review, /Owner review required/);
 });
+
+test("renders only allowlisted trusted observer decision reasons", () => {
+  const text = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "waiting-checks",
+    decisionReason: "required-checks-pending",
+  });
+  assert.match(text, /Decision.*required-checks-pending/);
+
+  assert.throws(
+    () =>
+      renderMaintenanceCampaignStatus({
+        state: state({ in_flight: false }),
+        maxIterations: 4,
+        phase: "owner-review",
+        decisionReason: "provider-says-retry",
+      }),
+    /Invalid campaign status decision reason/,
+  );
+});
