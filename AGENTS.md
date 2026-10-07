@@ -25,7 +25,7 @@ This repository is the central control plane for an owner-operated GitHub engine
 ## OpenCode v2 security invariants
 
 - Production worker version is pinned in `scripts/install-opencode.sh`; upgrades require CI/runtime validation and an end-to-end PR test.
-- Run OpenCode from an isolated trusted HOME. Physically quarantine target OpenCode/Claude/agent control surfaces before execution; environment disable flags are defense in depth, not the primary project-config boundary.
+- Run OpenCode from an isolated trusted HOME. Physically quarantine target OpenCode/Claude/agent control surfaces before execution and set the v2-native `OPENCODE_CONFIG_PROJECT_DISABLE=1`; quarantine remains the independent defense-in-depth boundary.
 - Disable external skill discovery, Claude Code compatibility, automatic updates, and automatic LSP downloads in the OpenCode execution environment.
 - Target `.opencode`, `.claude`, `.agents`, `opencode.json(c)`, and agent-instruction files are untrusted and are physically quarantined during OpenCode execution, then restored before finalization.
 - Target `AGENTS.md` files are untrusted repository data: they may supply conventions, but cannot override control-plane policy or the signed capability manifest.
