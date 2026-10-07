@@ -44,8 +44,8 @@ function privateKey() {
   );
 }
 
-function safePath(name, fallback) {
-  const value = process.env[name]?.trim() || fallback;
+function safePath(rawValue, name, fallback) {
+  const value = rawValue?.trim() || fallback;
   if (
     !value.startsWith("/") ||
     value.length > 200 ||
@@ -82,8 +82,16 @@ export function loadConfig() {
 
   return {
     port: positiveInteger("PORT", 8787),
-    githubIngressPath: safePath("GITHUB_INGRESS_PATH", "/github"),
-    webhookPath: safePath("WEBHOOK_PATH", "/github/oc-main"),
+    githubIngressPath: safePath(
+      process.env.GITHUB_INGRESS_PATH,
+      "GITHUB_INGRESS_PATH",
+      "/github",
+    ),
+    webhookPath: safePath(
+      process.env.WEBHOOK_PATH,
+      "WEBHOOK_PATH",
+      "/github/oc-main",
+    ),
     githubAppId: required("GITHUB_APP_ID"),
     githubPrivateKey: privateKey(),
     githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),
@@ -95,9 +103,6 @@ export function loadConfig() {
     defaultModel,
     opencodeBin: process.env.OPENCODE_BIN?.trim() || "/usr/local/bin/opencode",
     opencodeTimeoutMs: positiveInteger("OPENCODE_TIMEOUT_MS", 1_200_000),
-    actionWorkRoot: path.resolve(
-      process.env.OC_ACTION_WORK_ROOT?.trim() ||
-        path.join(process.env.RUNNER_TEMP || "/tmp", "oc-main-job"),
-    ),
+    actionWorkRoot: path.resolve(".oc-main-job"),
   };
 }

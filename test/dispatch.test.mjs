@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSignedJob, verifySignedJob } from "../src/dispatch.mjs";
 
-const secret = "0123456789abcdef0123456789abcdef";
+const signingKey = "unit-test-signing-key".repeat(2);
 
 test("signs and verifies controller-to-worker jobs", () => {
   const job = createSignedJob(
@@ -17,10 +17,10 @@ test("signs and verifies controller-to-worker jobs", () => {
       model: "opencode/big-pickle",
       prompt: "fix it",
     },
-    secret,
+    signingKey,
   );
 
-  const verified = verifySignedJob(job, secret, job.issued_at + 1);
+  const verified = verifySignedJob(job, signingKey, job.issued_at + 1);
   assert.equal(verified.repository, "owner/repo");
   assert.equal(verified.pull_number, 7);
   assert.equal(verified.comment_user_id, 42);
@@ -40,11 +40,11 @@ test("rejects tampered worker jobs", () => {
       model: "opencode/big-pickle",
       prompt: "fix it",
     },
-    secret,
+    signingKey,
   );
 
   assert.throws(
-    () => verifySignedJob({ ...job, prompt: "do something else" }, secret, job.issued_at),
+    () => verifySignedJob({ ...job, prompt: "do something else" }, signingKey, job.issued_at),
     /signature is invalid/,
   );
 });
@@ -62,11 +62,11 @@ test("rejects expired worker jobs", () => {
       model: "opencode/big-pickle",
       prompt: "fix it",
     },
-    secret,
+    signingKey,
   );
 
   assert.throws(
-    () => verifySignedJob(job, secret, job.issued_at + 31 * 60),
+    () => verifySignedJob(job, signingKey, job.issued_at + 31 * 60),
     /expired/,
   );
 });

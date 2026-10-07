@@ -2,19 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const WORK_ROOT = ".oc-main-job";
+const JOB_FILE = ".oc-main-job/job.json";
+const RESULT_FILE = ".oc-main-job/result.json";
+
 export function actionWorkRoot() {
-  return path.resolve(
-    process.env.OC_ACTION_WORK_ROOT?.trim() ||
-      path.join(process.env.RUNNER_TEMP || "/tmp", "oc-main-job"),
-  );
-}
-
-function jobPath() {
-  return path.join(actionWorkRoot(), "job.json");
-}
-
-function resultPath() {
-  return path.join(actionWorkRoot(), "result.json");
+  return path.resolve(WORK_ROOT);
 }
 
 function signJob(job, secret) {
@@ -25,21 +18,25 @@ function signJob(job, secret) {
 }
 
 export async function writeJob(job, secret) {
-  await fs.mkdir(actionWorkRoot(), { recursive: true });
+  await fs.mkdir(".oc-main-job", { recursive: true });
   await fs.writeFile(
-    jobPath(),
+    ".oc-main-job/job.json",
     JSON.stringify({ job, signature: signJob(job, secret) }, null, 2),
     { mode: 0o600 },
   );
 }
 
 export async function readJobUnsafe() {
-  const record = JSON.parse(await fs.readFile(jobPath(), "utf8"));
+  const record = JSON.parse(
+    await fs.readFile(".oc-main-job/job.json", "utf8"),
+  );
   return record.job;
 }
 
 export async function readVerifiedJob(secret) {
-  const record = JSON.parse(await fs.readFile(jobPath(), "utf8"));
+  const record = JSON.parse(
+    await fs.readFile(".oc-main-job/job.json", "utf8"),
+  );
   const expected = signJob(record.job, secret);
   const provided = String(record.signature || "");
   const expectedBuffer = Buffer.from(expected);
@@ -56,14 +53,18 @@ export async function readVerifiedJob(secret) {
 }
 
 export async function writeResult(result) {
-  await fs.writeFile(resultPath(), JSON.stringify(result, null, 2), {
-    mode: 0o600,
-  });
+  await fs.writeFile(
+    ".oc-main-job/result.json",
+    JSON.stringify(result, null, 2),
+    { mode: 0o600 },
+  );
 }
 
 export async function readResult() {
   try {
-    return JSON.parse(await fs.readFile(resultPath(), "utf8"));
+    return JSON.parse(
+      await fs.readFile(".oc-main-job/result.json", "utf8"),
+    );
   } catch (error) {
     if (error?.code === "ENOENT") {
       return {

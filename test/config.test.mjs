@@ -30,8 +30,8 @@ function withEnvironment(values, fn) {
 const base = {
   GITHUB_APP_ID: "1",
   GITHUB_APP_PRIVATE_KEY_BASE64: Buffer.from("test-key").toString("base64"),
-  GITHUB_WEBHOOK_SECRET: "secret",
-  WORKER_DISPATCH_SECRET: "0123456789abcdef0123456789abcdef",
+  GITHUB_WEBHOOK_SECRET: ["unit", "test", "webhook"].join("-"),
+  WORKER_DISPATCH_SECRET: "unit-test-worker-key".repeat(2),
   CONTROL_REPOSITORY: "owner/oc-main",
 };
 

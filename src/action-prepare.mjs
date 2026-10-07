@@ -7,13 +7,8 @@ import {
   getPullRequest,
 } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
-import {
-  buildAgentPrompt,
-  opencodeConfigHome,
-} from "./opencode.mjs";
+import { buildAgentPrompt } from "./opencode.mjs";
 import { actionWorkRoot, writeJob } from "./action-state.mjs";
-
-const RUNTIME_CONFIG = path.resolve("runtime", "opencode");
 
 const config = loadConfig();
 const payload = verifySignedJob(
@@ -28,9 +23,8 @@ if (!config.allowedModels.has(payload.model)) {
   throw new Error("Worker payload model is not allowlisted");
 }
 
-const workRoot = actionWorkRoot();
-await fs.rm(workRoot, { recursive: true, force: true });
-await fs.mkdir(workRoot, { recursive: true });
+await fs.rm(".oc-main-job", { recursive: true, force: true });
+await fs.mkdir(".oc-main-job", { recursive: true });
 
 const baseToken = await createRepositoryInstallationToken(
   config,
@@ -55,7 +49,7 @@ const headToken = await createRepositoryInstallationToken(
   headRepository,
 );
 
-const repositoryDir = path.join(workRoot, "repo");
+const repositoryDir = path.resolve(".oc-main-job/repo");
 const { initialHead, remote } = await clonePullRequestHead({
   token: headToken,
   repository: headRepository,
@@ -67,10 +61,13 @@ if (initialHead !== expectedHead) {
   throw new Error("Checked-out PR head does not match GitHub; retry the command");
 }
 
-const homeDir = path.join(workRoot, "home");
-const opencodeConfigDir = opencodeConfigHome(homeDir);
-await fs.mkdir(path.dirname(opencodeConfigDir), { recursive: true });
-await fs.cp(RUNTIME_CONFIG, opencodeConfigDir, { recursive: true });
+const homeDir = path.resolve(".oc-main-job/home");
+await fs.mkdir(".oc-main-job/home/.config", { recursive: true });
+await fs.cp(
+  "runtime/opencode",
+  ".oc-main-job/home/.config/opencode",
+  { recursive: true },
+);
 
 const prompt = buildAgentPrompt({
   repository: payload.repository,
