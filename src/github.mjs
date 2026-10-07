@@ -345,7 +345,7 @@ export async function waitForPullRequestHeadAfterPush({
     throw new Error("Invalid finalizer head convergence delay");
   }
 
-  for (let attempt = 1; attempt <= maximum; attempt += 1) {
+  async function readAttempt(attempt) {
     const pullRequest = await getPullRequestImpl(
       repository,
       pullNumber,
@@ -364,9 +364,10 @@ export async function waitForPullRequestHeadAfterPush({
       );
     }
     await sleepImpl(delay);
+    return readAttempt(attempt + 1);
   }
 
-  throw new Error("Maintenance campaign head convergence exhausted");
+  return readAttempt(1);
 }
 
 
