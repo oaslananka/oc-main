@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, requiredChecksApiPaths } from "../src/github.mjs";
+import { apiPath, installationTokenRequestBody, maintenanceCampaignBranchName, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
