@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-function hasRule(config, action, resource, effect) {
-  return config.permissions.some(
+function hasRule(rules, action, resource, effect) {
+  return rules.some(
     (rule) =>
       rule.action === action &&
       rule.resource === resource &&
@@ -11,23 +11,29 @@ function hasRule(config, action, resource, effect) {
   );
 }
 
-test("trusted OpenCode v2 config is native and locked down", () => {
-  const config = JSON.parse(
+function loadConfig() {
+  return JSON.parse(
     fs.readFileSync("runtime/opencode/opencode.json", "utf8"),
   );
+}
+
+test("trusted OpenCode v2 config is native and locked down", () => {
+  const config = loadConfig();
 
   assert.equal(config.default_agent, "orchestrator");
   assert.equal(config.share, "disabled");
   assert.equal(config.update, "disable");
   assert.equal(config.lsp, false);
+  assert.deepEqual(config.skills, ["~/.config/opencode/skills"]);
 
-  assert.equal(hasRule(config, "external_directory", "*", "deny"), true);
-  assert.equal(hasRule(config, "question", "*", "deny"), true);
-  assert.equal(hasRule(config, "skill", "*", "deny"), true);
-  assert.equal(hasRule(config, "skill", "oc-*", "allow"), true);
-  assert.equal(hasRule(config, "task", "*", "deny"), true);
-  assert.equal(hasRule(config, "bash", "*git push*", "deny"), true);
-  assert.equal(hasRule(config, "bash", "*git commit*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "external_directory", "*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "question", "*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "skill", "*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "skill", "oc-*", "allow"), true);
+  assert.equal(hasRule(config.permissions, "task", "*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "bash", "*git push*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "bash", "*git commit*", "deny"), true);
+  assert.equal(hasRule(config.permissions, "bash", "*git remote*", "deny"), true);
 
   assert.equal(config.agents.build.disabled, true);
   assert.equal(config.agents.plan.disabled, true);
@@ -39,16 +45,68 @@ test("trusted OpenCode v2 config is native and locked down", () => {
   assert.equal(config.mcp.servers.context7.protocol, "legacy");
 });
 
-test("trusted agent pack contains expected roles", () => {
-  assert.equal(fs.existsSync("runtime/opencode/agents/orchestrator.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/planner.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/researcher.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/implementer.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/reviewer.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/security-reviewer.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/test-engineer.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/ci-debugger.md"), true);
-  assert.equal(fs.existsSync("runtime/opencode/agents/release-engineer.md"), true);
+test("trusted agent pack is defined directly in native v2 config", () => {
+  const config = loadConfig();
+  const ids = [
+    "orchestrator",
+    "planner",
+    "researcher",
+    "implementer",
+    "reviewer",
+    "security-reviewer",
+    "test-engineer",
+    "ci-debugger",
+    "release-engineer",
+  ];
+
+  for (const id of ids) {
+    assert.ok(config.agents[id], "missing trusted config agent " + id);
+    assert.equal(typeof config.agents[id].system, "string");
+    assert.ok(config.agents[id].system.length > 20);
+    assert.ok(Array.isArray(config.agents[id].permissions));
+  }
+
+  assert.equal(config.agents.orchestrator.mode, "primary");
+  assert.equal(config.agents.implementer.mode, "subagent");
+  assert.equal(config.agents.implementer.hidden, true);
+  assert.equal(config.agents["ci-debugger"].hidden, true);
+  assert.equal(config.agents["release-engineer"].hidden, true);
+
+  assert.equal(
+    hasRule(config.agents.orchestrator.permissions, "edit", "*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.agents.orchestrator.permissions, "bash", "*", "deny"),
+    true,
+  );
+  assert.equal(
+    hasRule(config.agents.orchestrator.permissions, "task", "implementer", "allow"),
+    true,
+  );
+  assert.equal(
+    hasRule(
+      config.agents.orchestrator.permissions,
+      "task",
+      "security-reviewer",
+      "allow",
+    ),
+    true,
+  );
+
+  for (const id of ["planner", "researcher", "reviewer", "security-reviewer"]) {
+    assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "deny"), true);
+    assert.equal(hasRule(config.agents[id].permissions, "bash", "*", "deny"), true);
+  }
+
+  for (const id of ["implementer", "ci-debugger", "release-engineer"]) {
+    assert.equal(hasRule(config.agents[id].permissions, "edit", "*", "allow"), true);
+    assert.equal(
+      config.agents[id].permissions.some((rule) => rule.action === "bash"),
+      false,
+      id + " must inherit the global bash deny rules without overriding them",
+    );
+  }
 });
 
 test("trusted skill pack uses only the oc- namespace", () => {
@@ -63,66 +121,4 @@ test("trusted skill pack uses only the oc- namespace", () => {
   assert.equal(fs.existsSync("runtime/opencode/skills/oc-dependency-upgrade/SKILL.md"), true);
   assert.equal(fs.existsSync("runtime/opencode/skills/oc-refactor/SKILL.md"), true);
   assert.equal(fs.existsSync("runtime/opencode/skills/oc-docs/SKILL.md"), true);
-});
-
-test("trusted agents use native v2 permissions frontmatter", () => {
-  const orchestrator = fs.readFileSync(
-    "runtime/opencode/agents/orchestrator.md",
-    "utf8",
-  );
-  const planner = fs.readFileSync(
-    "runtime/opencode/agents/planner.md",
-    "utf8",
-  );
-  const researcher = fs.readFileSync(
-    "runtime/opencode/agents/researcher.md",
-    "utf8",
-  );
-  const reviewer = fs.readFileSync(
-    "runtime/opencode/agents/reviewer.md",
-    "utf8",
-  );
-  const securityReviewer = fs.readFileSync(
-    "runtime/opencode/agents/security-reviewer.md",
-    "utf8",
-  );
-  const testEngineer = fs.readFileSync(
-    "runtime/opencode/agents/test-engineer.md",
-    "utf8",
-  );
-  const implementer = fs.readFileSync(
-    "runtime/opencode/agents/implementer.md",
-    "utf8",
-  );
-  const ciDebugger = fs.readFileSync(
-    "runtime/opencode/agents/ci-debugger.md",
-    "utf8",
-  );
-  const releaseEngineer = fs.readFileSync(
-    "runtime/opencode/agents/release-engineer.md",
-    "utf8",
-  );
-
-  for (const agent of [
-    orchestrator,
-    planner,
-    researcher,
-    reviewer,
-    securityReviewer,
-    testEngineer,
-    implementer,
-    ciDebugger,
-    releaseEngineer,
-  ]) {
-    assert.equal(agent.includes("\npermissions:\n"), true);
-    assert.equal(agent.includes("\npermission:\n"), false);
-  }
-
-  assert.equal(orchestrator.includes("resource: implementer"), true);
-  assert.equal(orchestrator.includes("resource: security-reviewer"), true);
-
-  for (const editingAgent of [implementer, ciDebugger, releaseEngineer]) {
-    assert.equal(editingAgent.includes("- action: bash"), false);
-    assert.equal(editingAgent.includes("- action: edit"), true);
-  }
 });
