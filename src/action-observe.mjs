@@ -1,7 +1,7 @@
 import {
   readMaintenanceCampaignState,
 } from "./campaign-state.mjs";
-import { observeMaintenanceCampaign } from "./campaign-observer.mjs";
+import { campaignObservationStopReason, observeMaintenanceCampaign } from "./campaign-observer.mjs";
 import { loadConfig } from "./config.mjs";
 import {
   FINALIZER_COMMENT_TOKEN_PERMISSIONS,
@@ -27,15 +27,6 @@ function exactCampaignState(pr, job, secret) {
     throw new Error("Maintenance observer campaign PR identity is invalid");
   }
   return state;
-}
-
-function campaignAdvanced(state, job) {
-  return (
-    state.terminal ||
-    state.in_flight ||
-    state.iteration !== job.campaignIteration ||
-    state.last_comment_id !== Number(job.commentId)
-  );
 }
 
 async function main() {
@@ -80,7 +71,7 @@ async function main() {
       job,
       config.workerDispatchSecret,
     );
-    if (campaignAdvanced(beforeState, job)) {
+    if (campaignObservationStopReason(beforeState, { iteration: job.campaignIteration, commentId: job.commentId })) {
       return { stop: true, reason: "campaign-advanced" };
     }
 
@@ -110,7 +101,7 @@ async function main() {
       job,
       config.workerDispatchSecret,
     );
-    if (campaignAdvanced(state, job)) {
+    if (campaignObservationStopReason(state, { iteration: job.campaignIteration, commentId: job.commentId })) {
       return { stop: true, reason: "campaign-advanced" };
     }
 
