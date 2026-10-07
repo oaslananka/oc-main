@@ -9,7 +9,7 @@ const BOT_IDENTITIES = new Map([
 ]);
 
 const DEPENDENCY_COUNT_RE = /\bwith\s+(\d{1,3})\s+updates?\b/i;
-const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/i;
+const SEMVER_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9a-z.-]+)?$/i;
 const DEPENDABOT_GROUP_RE = /^Bump the (.+?) group\b/i;
 const DEPENDABOT_VERSION_RE = /^Bump (.+?) from (\S+) to (\S+)$/i;
 const DEPENDABOT_ECOSYSTEM_RE = /^dependabot\/([^/]+)\//i;
@@ -250,7 +250,13 @@ function laneRecord(key, pulls) {
 }
 
 function laneKey(pr) {
-  return pr.ecosystem + ":" + pr.updateScope;
+  return (
+    pr.ecosystem +
+    ":" +
+    pr.updateScope +
+    ":base-" +
+    encodeURIComponent(pr.baseRef || "unknown")
+  );
 }
 
 function mustIsolate(pr, maximum) {
