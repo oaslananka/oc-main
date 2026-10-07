@@ -93,7 +93,7 @@ export function installationTokenRequestBody(repository, permissions) {
   const normalized = {};
   for (const [permission, level] of entries) {
     const allowed = TOKEN_PERMISSION_LEVELS.get(permission);
-    if (!allowed || !allowed.has(level)) {
+    if (!allowed?.has(level)) {
       throw new Error(
         "Unsupported GitHub installation token permission: " +
           permission +
