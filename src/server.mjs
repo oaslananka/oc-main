@@ -175,6 +175,7 @@ async function rollbackCampaignDispatch(route) {
       commentId: route.workerTrigger.commentId,
       iteration: campaignDispatch.iteration,
       expectedHead: campaignDispatch.expectedHead,
+      maxIterations: campaignDispatch.maxIterations,
     });
   } catch (error) {
     console.error("campaign dispatch rollback failed", error);
