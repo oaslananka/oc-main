@@ -308,6 +308,68 @@ export async function getPullRequest(repository, pullNumber, token) {
   return request(`repos/${safeRepository}/pulls/${safePullNumber}`, { token });
 }
 
+export const FINALIZER_HEAD_CONVERGENCE_ATTEMPTS = 4;
+export const FINALIZER_HEAD_CONVERGENCE_DELAY_MS = 1_000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function waitForPullRequestHeadAfterPush({
+  repository,
+  pullNumber,
+  preparedHead,
+  newHead,
+  token,
+  attempts = FINALIZER_HEAD_CONVERGENCE_ATTEMPTS,
+  delayMs = FINALIZER_HEAD_CONVERGENCE_DELAY_MS,
+  getPullRequestImpl = getPullRequest,
+  sleepImpl = sleep,
+}) {
+  const previous = commitSha(preparedHead);
+  const target = commitSha(newHead);
+  const maximum = Number(attempts);
+  const delay = Number(delayMs);
+  if (
+    !Number.isSafeInteger(maximum) ||
+    maximum < 1 ||
+    maximum > FINALIZER_HEAD_CONVERGENCE_ATTEMPTS
+  ) {
+    throw new Error("Invalid finalizer head convergence attempt count");
+  }
+  if (
+    !Number.isSafeInteger(delay) ||
+    delay < 0 ||
+    delay > FINALIZER_HEAD_CONVERGENCE_DELAY_MS
+  ) {
+    throw new Error("Invalid finalizer head convergence delay");
+  }
+
+  for (let attempt = 1; attempt <= maximum; attempt += 1) {
+    const pullRequest = await getPullRequestImpl(
+      repository,
+      pullNumber,
+      token,
+    );
+    const observed = commitSha(pullRequest?.head?.sha);
+    if (observed === target) return pullRequest;
+    if (observed !== previous) {
+      throw new Error(
+        "Maintenance campaign head changed to an unexpected commit after push",
+      );
+    }
+    if (attempt === maximum) {
+      throw new Error(
+        "Maintenance campaign head did not converge to the pushed commit",
+      );
+    }
+    await sleepImpl(delay);
+  }
+
+  throw new Error("Maintenance campaign head convergence exhausted");
+}
+
+
 async function updatePullRequestBody(repository, pullNumber, body, token) {
   const safeRepository = repositoryPath(repository);
   const safePullNumber = positiveId(pullNumber, "pull request number");
@@ -878,13 +940,24 @@ export async function completeMaintenanceCampaignDispatch(
   token,
   secret,
 ) {
-  const pullRequest = await getPullRequest(repository, pullNumber, token);
+  const normalizedExpectedHead = commitSha(expectedHead);
+  const normalizedNewHead = commitSha(newHead);
+  const pullRequest =
+    normalizedNewHead === normalizedExpectedHead
+      ? await getPullRequest(repository, pullNumber, token)
+      : await waitForPullRequestHeadAfterPush({
+          repository,
+          pullNumber,
+          preparedHead: normalizedExpectedHead,
+          newHead: normalizedNewHead,
+          token,
+        });
   const state = campaignStateForPullRequest(pullRequest, secret);
   if (!state) return null;
   if (pullRequest.state !== "open") {
     throw new Error("Maintenance campaign pull request is not open");
   }
-  if (pullRequest.head?.sha !== String(newHead || "").toLowerCase()) {
+  if (commitSha(pullRequest.head?.sha) !== normalizedNewHead) {
     throw new Error("Maintenance campaign head changed before state completion");
   }
   const next = completeCampaignStateIteration(state, {
