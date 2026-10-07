@@ -225,7 +225,9 @@ function formatMaintenanceQualityContext(evidence) {
       "source=" + check.source,
     ];
     lines.push(
-      "- check " +
+      "- " +
+        (check.blocking ? "BLOCKING " : "") +
+        "check " +
         check.name +
         " [" +
         flags.join(", ") +
