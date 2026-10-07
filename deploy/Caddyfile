@@ -1,15 +1,15 @@
 webhook.oaslananka.dev {
 	encode zstd gzip
 
-	@oaslananka_ops path /oaslananka-ops
-	handle @oaslananka_ops {
+	@github path /github
+	handle @github {
 		header {
 			X-Content-Type-Options "nosniff"
 			Referrer-Policy "no-referrer"
 			X-Frame-Options "DENY"
 			-Server
 		}
-		reverse_proxy oc-main-webhook:8787
+		reverse_proxy oc-main-github-router:8788
 	}
 
 	handle {

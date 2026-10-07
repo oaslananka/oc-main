@@ -15,7 +15,7 @@ HTTPS is terminated by the VPS's existing shared Caddy edge (`compose-caddy-1`),
 
 The public endpoint is:
 
-`https://webhook.oaslananka.dev/oaslananka-ops`
+`https://webhook.oaslananka.dev/github`
 
 The VPS does **not** run OpenCode and does not clone or build target repositories.
 
@@ -168,7 +168,7 @@ Logs:
 sudo ./scripts/compose.sh logs -f controller
 ```
 
-The controller joins the existing external Docker network `oaslananka-frontdoor` with the alias `oc-main-webhook`. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service. The route proxies only `webhook.oaslananka.dev/oaslananka-ops` to `oc-main-webhook:8787`.
+The public GitHub App webhook terminates at the lightweight `github-router` container on exact path `/github`. The router preserves the raw request body and GitHub headers, then forwards the delivery to `http://controller:8787/github/oc-main`. The controller performs the HMAC and owner-command checks. The router is attached to the existing `oaslananka-frontdoor` network as `oc-main-github-router`; the controller is isolated on the private `backend` network. Add `deploy/Caddyfile` as a site block to the shared Caddy configuration at `/opt/oaslananka-agent/current/infra/compose/Caddyfile`, then validate and reload that existing Caddy service.
 
 Stop:
 
@@ -186,15 +186,15 @@ The controller container is intentionally lightweight. It has no OpenCode instal
 
 ## Cloudflare and GitHub App
 
-Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact path `/oaslananka-ops` to the `oc-main-webhook:8787` Docker-network alias.
+Configure Cloudflare so `webhook.oaslananka.dev` resolves to the VPS. The existing shared Caddy terminates HTTPS and only proxies the exact public path `/github` to `oc-main-github-router:8788`.
 
-The GitHub App webhook URL for this service is:
+The GitHub App webhook URL is the stable shared ingress:
 
 ```text
 https://webhook.oaslananka.dev/oaslananka-ops
 ```
 
-A GitHub App has one webhook configuration. If another live service already consumes that App webhook, put a fan-out/router in front before changing the existing App webhook URL.
+The `github-router` is the fan-out point. Today it forwards only to `/github/oc-main`. Future consumers can be added as additional `GITHUB_WEBHOOK_TARGETS` without changing the GitHub App webhook URL. All targets receive the original raw body and GitHub headers so each consumer can verify the GitHub signature independently.
 
 ## GitHub Actions security boundary
 

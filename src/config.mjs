@@ -45,7 +45,7 @@ function privateKey() {
 }
 
 function webhookPath() {
-  const value = process.env.WEBHOOK_PATH?.trim() || "/oaslananka-ops";
+  const value = process.env.WEBHOOK_PATH?.trim() || "/github/oc-main";
   if (
     !value.startsWith("/") ||
     value.length > 200 ||

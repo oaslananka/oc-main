@@ -30,11 +30,51 @@ services:
       retries: 5
       start_period: 15s
     networks:
+      - backend
+
+  github-router:
+    image: oc-main-webhook:local
+    restart: unless-stopped
+    depends_on:
+      controller:
+        condition: service_healthy
+    entrypoint:
+      - node
+      - /opt/oc-main/src/router.mjs
+    environment:
+      GITHUB_INGRESS_PATH: /github
+      GITHUB_WEBHOOK_TARGETS: http://controller:8787/github/oc-main
+      ROUTER_PORT: "8788"
+    expose:
+      - "8788"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,uid=1000,gid=1000
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          require('http').get('http://127.0.0.1:8788/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      backend:
       frontdoor:
         aliases:
-          - oc-main-webhook
+          - oc-main-github-router
 
 networks:
+  backend:
+    driver: bridge
+    internal: true
   frontdoor:
     external: true
     name: oaslananka-frontdoor
