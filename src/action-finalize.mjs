@@ -93,6 +93,7 @@ async function main() {
         state,
         readToken,
         statusToken: baseToken,
+        campaignStateSecret: config.workerDispatchSecret,
         workerRunId: process.env.GITHUB_RUN_ID || null,
       });
     } catch (error) {
