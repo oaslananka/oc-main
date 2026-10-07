@@ -81,6 +81,8 @@ For high-risk edit-capable jobs, the worker performs a separate built-in `plan` 
 
 OpenCode runs with JSON output. The worker extracts actual assistant text from structured events instead of treating terminal/progress output as the final answer.
 
+OpenCode process exits remain fail-closed by default. The worker inspects a non-zero result only for exit code `1`, with empty stderr and a fully parseable JSON event stream. It may classify that result as recovered only when the stream contains a session error followed by a later completed assistant text turn from a matching final step. An explicit final `step_finish` must be terminal (`stop`); its absence is tolerated because OpenCode's JSON event stream can race the final part at process teardown. Unexplained exit 1, malformed output, stderr, other exit codes, or an incomplete later turn remain failures. This classification does not bypass tracked-change completion gates, read-only enforcement, exact-head validation, or the trusted finalizer.
+
 Modes that semantically require an edit (`fix`, `apply`, `ci`, `release`, `refactor`) have a completion gate. If the first implementation pass produces no tracked change, the worker performs one bounded retry. If the second pass still produces no change, the run becomes `incomplete` and the workflow fails instead of reporting a false green completion. A genuine blocker must be reported explicitly with `BLOCKED:`.
 
 ## Validation

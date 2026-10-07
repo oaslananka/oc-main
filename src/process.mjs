@@ -4,7 +4,13 @@ import { StringDecoder } from "node:string_decoder";
 export async function runProcess(
   command,
   args,
-  { cwd, env = process.env, timeoutMs = 300_000, maxOutputBytes = 2_000_000 } = {},
+  {
+    cwd,
+    env = process.env,
+    timeoutMs = 300_000,
+    maxOutputBytes = 2_000_000,
+    rejectOnNonZero = true,
+  } = {},
 ) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -62,7 +68,7 @@ export async function runProcess(
         reject(new Error(`${command} exceeded the time limit`));
         return;
       }
-      if (code !== 0) {
+      if (code !== 0 && rejectOnNonZero) {
         const raw = stderr.trim() || stdout.trim() || "no process output";
         const detail = raw.length > 12_000
           ? "[process output truncated to final 12000 characters]\n" + raw.slice(-12_000)

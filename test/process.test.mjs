@@ -32,3 +32,18 @@ test("runProcess reports the tail of long failures", async () => {
     },
   );
 });
+
+test("runProcess can return a non-zero result for explicit callers", async () => {
+  const result = await runProcess(
+    process.execPath,
+    [
+      "-e",
+      "process.stdout.write('stdout'); process.stderr.write('stderr'); process.exit(7)",
+    ],
+    { rejectOnNonZero: false },
+  );
+
+  assert.equal(result.code, 7);
+  assert.equal(result.stdout, "stdout");
+  assert.equal(result.stderr, "stderr");
+});

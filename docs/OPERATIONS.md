@@ -118,6 +118,8 @@ The trusted prepare stage fetches bounded public Codacy PR findings when availab
 
 OpenCode CLI output is requested as JSON and reduced to assistant text events. For `fix`, `apply`, `ci`, `release`, and `refactor`, a no-change first pass triggers one bounded retry. A second no-change result is marked incomplete and the Actions run fails rather than reporting a successful no-op.
 
+A non-zero OpenCode process is still a failure by default. The only recoverable process status is exit code `1` when stderr is empty and the complete JSON stream proves that a session error was followed by a later completed assistant turn. If a final `step_finish` event is present it must have reason `stop`; the classifier tolerates a missing final `step_finish` because OpenCode's JSON stream can omit that last event during teardown. All unexplained or malformed non-zero results fail closed, and edit-required/read-only/exact-head finalization gates remain unchanged.
+
 ## MCP
 
 Context7 is enabled at `https://mcp.context7.com/mcp` using anonymous access with OAuth auto-discovery disabled. It is research-only and not a required CI availability gate. Never expose control-plane write credentials to an MCP inside OpenCode.
