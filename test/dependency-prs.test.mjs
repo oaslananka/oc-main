@@ -202,3 +202,18 @@ test("rejects invalid policy batch bounds", () => {
     /Invalid dependency batch bound/,
   );
 });
+
+test("warns when recognized dependency PR evidence is truncated", () => {
+  const rows = Array.from({ length: 31 }, (_, index) =>
+    pull({
+      number: 100 + index,
+      title: "Bump pkg-" + index + " from 1.0.0 to 1.0.1",
+      headRef:
+        "dependabot/npm_and_yarn/pkg-" + index + "-1.0.1",
+    }),
+  );
+  const evidence = collectDependencyPullRequestEvidence(rows, 5);
+
+  assert.equal(evidence.pullRequests.length, 30);
+  assert.match(evidence.warnings[0], /truncated at 30 recognized bot pull requests/);
+});
