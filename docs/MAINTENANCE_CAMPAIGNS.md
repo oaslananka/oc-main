@@ -253,7 +253,7 @@ Conservative outcomes are explicit:
 - active iteration → hold;
 - no/stale evidence → refresh evidence;
 - pending required checks → hold / waiting for checks;
-- missing required checks or incomplete authority → owner review;
+- missing or cancelled required checks, incomplete authority, or ambiguous blocking-check cause → owner review;
 - stale signed campaign head → owner review;
 - exhausted/conflicting iteration policy → owner review;
 - clean settled head → owner review.
