@@ -6,6 +6,7 @@ import {
   createPullRequestComment,
   createRepositoryInstallationToken,
   getPullRequest,
+  tryUpdateMaintenanceCampaignStatus,
 } from "./github.mjs";
 import { commitChanges, hasChanges, pushHead } from "./git.mjs";
 import { finalizationDecision } from "./finalize-policy.mjs";
@@ -43,9 +44,9 @@ async function main() {
       !Number.isSafeInteger(job.campaignIteration) ||
       job.campaignIteration <= 0
     ) {
-      return;
+      return null;
     }
-    await completeMaintenanceCampaignDispatch(
+    return completeMaintenanceCampaignDispatch(
       job.repository,
       {
         pullNumber: job.pullNumber,
@@ -60,10 +61,27 @@ async function main() {
     );
   }
 
+  async function updateCampaignStatus(state, phase) {
+    if (!state) return;
+    await tryUpdateMaintenanceCampaignStatus(
+      job.repository,
+      job.pullNumber,
+      {
+        state,
+        maxIterations: job.qualityEvidence?.policy?.campaign?.max_iterations,
+        phase,
+        evidence: job.qualityEvidence,
+        workerRunId: process.env.GITHUB_RUN_ID || null,
+      },
+      baseToken,
+    );
+  }
+
   if (result.runStatus === "incomplete") {
     const message =
       result.output || result.error || "The requested change was not completed.";
-    await finishCampaign(job.expectedHead, false);
+    const campaignState = await finishCampaign(job.expectedHead, false);
+    await updateCampaignStatus(campaignState, "incomplete");
     await createPullRequestComment(
       job.repository,
       job.pullNumber,
@@ -75,7 +93,8 @@ async function main() {
   }
 
   if (result.runStatus !== "success") {
-    await finishCampaign(job.expectedHead, false);
+    const campaignState = await finishCampaign(job.expectedHead, false);
+    await updateCampaignStatus(campaignState, "failed");
     await createPullRequestComment(job.repository, job.pullNumber,
       "Run failed (" + runLabel(job) + "): " + truncate(result.error || "OpenCode failed"), baseToken);
     return;
@@ -89,14 +108,16 @@ async function main() {
   });
 
   if (decision === "blocked-read-only") {
-    await finishCampaign(job.expectedHead, false);
+    const campaignState = await finishCampaign(job.expectedHead, false);
+    await updateCampaignStatus(campaignState, "blocked-read-only");
     await createPullRequestComment(job.repository, job.pullNumber,
       "Run blocked (" + runLabel(job) + "). The selected mode is read-only but the agent produced tracked-file changes, so nothing was pushed.\n\n" + truncate(result.output), baseToken);
     return;
   }
 
   if (decision === "completed-no-changes") {
-    await finishCampaign(job.expectedHead, false);
+    const campaignState = await finishCampaign(job.expectedHead, false);
+    await updateCampaignStatus(campaignState, "completed-no-changes");
     await createPullRequestComment(job.repository, job.pullNumber,
       "Completed (" + runLabel(job) + "). No repository changes were produced.\n\n" + truncate(result.output), baseToken);
     return;
@@ -116,7 +137,8 @@ async function main() {
   );
   const commitSha = await commitChanges(job.repositoryDir, commitMessageForMode(job.mode));
   await pushHead({ token: headToken, repositoryDir: job.repositoryDir, remote: job.remote, branch: job.headBranch });
-  await finishCampaign(commitSha, false);
+  const campaignState = await finishCampaign(commitSha, false);
+  await updateCampaignStatus(campaignState, "pushed");
   await createPullRequestComment(job.repository, job.pullNumber,
     "Done (" + runLabel(job) + "). Pushed commit `" + commitSha.slice(0, 7) + "` to `" + job.headBranch + "`.\n\n" + truncate(result.output), baseToken);
 }
