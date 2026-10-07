@@ -61,7 +61,7 @@ export function verifySignedJob(payload, secret, nowSeconds = Math.floor(Date.no
     issued_at: positiveInteger(payload.issued_at, "issued_at"), nonce: String(payload.nonce || ""),
   };
 
-  if (!/^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/.test(normalized.repository)) throw new Error("Invalid worker repository");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized.repository)) throw new Error("Invalid worker repository");
   if (!normalized.model || !normalized.prompt || normalized.prompt.length > 20_000) throw new Error("Invalid worker model or prompt");
   if (!/^[0-9a-f-]{36}$/i.test(normalized.nonce)) throw new Error("Invalid worker nonce");
 
