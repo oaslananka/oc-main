@@ -55,6 +55,7 @@ if (target === "config") {
   assert.equal(info.lsp, false);
   assert.deepEqual(info.skills, ["~/.config/opencode/skills"]);
   assert.deepEqual(info.instructions, ["~/.config/opencode/AGENTS.md"]);
+  const configuredAgentIds = new Set(Object.keys(info.agents || {}));
   for (const id of [
     "orchestrator",
     "planner",
@@ -66,7 +67,10 @@ if (target === "config") {
     "ci-debugger",
     "release-engineer",
   ]) {
-    assert.ok(info.agents?.[id], "trusted config is missing agent " + id);
+    assert.ok(
+      configuredAgentIds.has(id),
+      "trusted config is missing agent " + id,
+    );
   }
   assert.equal(info.mcp?.servers?.context7?.type, "remote");
   assert.equal(
