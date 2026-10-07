@@ -233,7 +233,7 @@ export async function evaluateAutomaticMaintenanceWakeup({
         maxIterations: reservation.maxIterations,
       });
     } catch (rollbackError) {
-      console.error("automatic campaign dispatch rollback failed", rollbackError);
+      console.error(`automatic campaign dispatch rollback failed for ${repository}#${pullNumber}`, rollbackError);
     }
     throw error;
   }
