@@ -1,0 +1,10 @@
+# Trusted maintenance policy, evaluated from the PR base commit.
+# Keep GitHub-required check inheritance; additionally require the repository's Node test job.
+version: 1
+campaign:
+  max_iterations: 4
+  max_dependencies_per_batch: 5
+required_checks:
+  inherit_from_github: true
+  names:
+    - test
