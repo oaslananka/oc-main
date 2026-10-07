@@ -1,17 +1,25 @@
 import http from "node:http";
 import { loadConfig } from "./config.mjs";
 import { parseCommand } from "./command.mjs";
+import { evaluateAutomaticMaintenanceWakeup } from "./campaign-auto.mjs";
 import { createSignedJob, wrapSignedJob } from "./dispatch.mjs";
+import { createKeyedSerialExecutor } from "./keyed-lock.mjs";
 import {
   abortMaintenanceCampaignDispatch,
   beginMaintenanceCampaignDispatch,
   createOrReuseMaintenanceCampaign,
   dispatchRepositoryEvent,
 } from "./github.mjs";
-import { extractIssueCommentTrigger, extractPullRequestTrigger, verifyWebhookSignature } from "./webhook.mjs";
+import {
+  extractCampaignStatusTrigger,
+  extractIssueCommentTrigger,
+  extractPullRequestTrigger,
+  verifyWebhookSignature,
+} from "./webhook.mjs";
 
 const config = loadConfig();
 const seenDeliveries = new Set();
+const routeSerial = createKeyedSerialExecutor();
 
 function isDuplicate(id) {
   return Boolean(id && seenDeliveries.has(id));
@@ -83,6 +91,8 @@ async function routeIssueCommand(issueTrigger, command) {
     repository: issueTrigger.repository,
     issueNumber: issueTrigger.issueNumber,
     commentId: issueTrigger.commentId,
+    taskPrompt: command.prompt,
+    model: command.model,
   });
   if (!campaign.pullRequest?.number) {
     throw new Error("Maintenance campaign pull request is unavailable");
@@ -91,9 +101,10 @@ async function routeIssueCommand(issueTrigger, command) {
     return { response: { status: 202, body: "campaign closed\n" } };
   }
 
-  const workerTrigger = {
+  let workerTrigger = {
     ...issueTrigger,
     pullNumber: campaign.pullRequest.number,
+    triggerKind: "owner-comment",
   };
   const campaignDispatch = await beginMaintenanceCampaignDispatch(config, {
     repository: workerTrigger.repository,
@@ -108,6 +119,10 @@ async function routeIssueCommand(issueTrigger, command) {
       },
     };
   }
+  workerTrigger = {
+    ...workerTrigger,
+    campaignIteration: campaignDispatch.iteration,
+  };
 
   return {
     workerTrigger,
@@ -126,7 +141,10 @@ async function routePullCommand(pullTrigger, command) {
   }
   if (command.mode !== "maintenance") {
     return {
-      workerTrigger: pullTrigger,
+      workerTrigger: {
+        ...pullTrigger,
+        triggerKind: "owner-comment",
+      },
       workerCommand: command,
       campaignDispatch: null,
     };
@@ -147,7 +165,13 @@ async function routePullCommand(pullTrigger, command) {
   }
 
   return {
-    workerTrigger: pullTrigger,
+    workerTrigger: {
+      ...pullTrigger,
+      triggerKind: "owner-comment",
+      campaignIteration: campaignDispatch.campaign
+        ? campaignDispatch.iteration
+        : null,
+    },
     workerCommand: campaignDispatch.campaign
       ? campaignPrompt(
           command,
@@ -206,6 +230,24 @@ function rememberedResponse(deliveryId, response) {
   return response;
 }
 
+function routeKey(trigger, issueTrigger = null) {
+  if (issueTrigger?.issueNumber) {
+    return trigger.repository + "#issue-" + issueTrigger.issueNumber;
+  }
+  return trigger.repository + "#pr-" + trigger.pullNumber;
+}
+
+async function handleAutomaticStatusWakeup(trigger) {
+  const result = await evaluateAutomaticMaintenanceWakeup({
+    config,
+    trigger,
+  });
+  return {
+    status: 202,
+    body: result.dispatched ? "automation queued\n" : "automation ignored\n",
+  };
+}
+
 async function handleOcMainWebhook(rawBody, headers) {
   const signature = headers["x-hub-signature-256"];
   if (!verifyWebhookSignature(rawBody, signature, config.githubWebhookSecret)) {
@@ -219,6 +261,18 @@ async function handleOcMainWebhook(rawBody, headers) {
 
   const eventName = headers["x-github-event"];
   const payload = JSON.parse(rawBody.toString("utf8"));
+  const statusTrigger = extractCampaignStatusTrigger(eventName, payload);
+  if (statusTrigger) {
+    if (!statusTrigger.repository || !statusTrigger.pullNumber) {
+      throw new Error("Campaign status webhook is missing repository or PR metadata");
+    }
+    const result = await routeSerial.run(
+      routeKey(statusTrigger),
+      () => handleAutomaticStatusWakeup(statusTrigger),
+    );
+    return rememberedResponse(deliveryId, result);
+  }
+
   const { pullTrigger, issueTrigger, trigger } = acceptedTrigger(
     eventName,
     payload,
@@ -249,17 +303,20 @@ async function handleOcMainWebhook(rawBody, headers) {
     );
   }
 
-  const route = await workerRoute(pullTrigger, issueTrigger, command);
-  if (route.response) {
-    return rememberedResponse(deliveryId, route.response);
-  }
+  const result = await routeSerial.run(
+    routeKey(trigger, issueTrigger),
+    async () => {
+      const route = await workerRoute(pullTrigger, issueTrigger, command);
+      if (route.response) return route.response;
 
-  await dispatchWorkerRoute(route);
-  rememberDelivery(deliveryId);
-  console.log(
-    `dispatched ${route.workerTrigger.repository}#${route.workerTrigger.pullNumber} from ${route.workerTrigger.commentUserLogin || route.workerTrigger.commentUserId}`,
+      await dispatchWorkerRoute(route);
+      console.log(
+        `dispatched ${route.workerTrigger.repository}#${route.workerTrigger.pullNumber} from ${route.workerTrigger.commentUserLogin || route.workerTrigger.commentUserId}`,
+      );
+      return { status: 202, body: "queued\n" };
+    },
   );
-  return { status: 202, body: "queued\n" };
+  return rememberedResponse(deliveryId, result);
 }
 
 function isGitHubWebhookPath(url) {
