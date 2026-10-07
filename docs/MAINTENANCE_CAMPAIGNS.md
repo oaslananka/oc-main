@@ -142,6 +142,16 @@ Stable vulnerability identifiers are deduplicated across providers. For example,
 
 The model receives the normalized snapshot, not an unbounded stream of bot comments.
 
+## Dependency pull request discovery
+
+Trusted prepare now performs bounded, read-only discovery of open dependency-bot pull requests using the existing target-repository `pull_requests:read` token. It recognizes only GitHub Bot actors with the canonical logins `dependabot[bot]` and `renovate[bot]`; lookalike users or unrelated bots are ignored.
+
+For each recognized PR, the collector preserves bounded evidence including PR number, bot kind, exact head/base SHA and refs, title, draft state, labels, ecosystem/update-scope classification when it can be established conservatively, package hint when available, and a dependency-count hint. Dependabot branch namespaces provide stronger ecosystem evidence; Renovate classifications remain `unknown` when the title/ref does not establish an ecosystem safely.
+
+The collector also emits a read-only lane proposal bounded by the base policy's `campaign.max_dependencies_per_batch`. Major, grouped, unknown, over-bound, or otherwise uncertain PRs remain isolated. Compatible same-ecosystem minor/patch PRs may be suggested as candidate consolidation lanes, but this is planning evidence only.
+
+Dependency PR titles, labels and inferred package/lane metadata are untrusted evidence. This discovery tranche does not close, retarget, supersede, merge, comment on, or otherwise mutate dependency PRs, and it does not add `actions:write` or any other new GitHub permission.
+
 ## Base maintenance policy
 
 A repository may define `.github/maintenance-policy.yml` on its protected base branch.
@@ -206,7 +216,7 @@ Existing repository `concurrency.cancel-in-progress` behavior should be preferre
 
 The issue-origin initializer is implemented, but the following remain intentionally out of scope:
 
-- discovering and grouping dependency-bot PRs into lanes;
+- mutating, closing, retargeting, or superseding dependency-bot PRs after the implemented read-only discovery/lane-proposal step;
 - automatically closing superseded dependency PRs;
 - updating sticky campaign status comments;
 - automatically scheduling the next campaign iteration after checks settle;
