@@ -5,6 +5,7 @@ import { unwrapSignedJob, verifySignedJob } from "./dispatch.mjs";
 import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
 import { buildAgentPrompt } from "./opencode.mjs";
+import { fetchCodacyQualityContext } from "./quality-context.mjs";
 import { writeJob } from "./action-state.mjs";
 
 const config = loadConfig();
@@ -39,6 +40,11 @@ const homeDir = path.resolve(".oc-main-job/home");
 await fs.mkdir(".oc-main-job/home/.config", { recursive: true });
 await fs.cp("runtime/opencode", ".oc-main-job/home/.config/opencode", { recursive: true });
 
+const qualityContext = await fetchCodacyQualityContext(
+  payload.repository,
+  payload.pull_number,
+);
+
 const prompt = buildAgentPrompt({
   repository: payload.repository,
   pullNumber: payload.pull_number,
@@ -48,12 +54,14 @@ const prompt = buildAgentPrompt({
   risk: payload.risk,
   capabilities: payload.capabilities,
   allowEdits: payload.allow_edits,
+  qualityContext,
 });
 
 await writeJob({
   repository: payload.repository, pullNumber: payload.pull_number, commentId: payload.comment_id,
   model: payload.model, mode: payload.mode, agent: payload.agent, risk: payload.risk,
   allowEdits: payload.allow_edits, capabilities: payload.capabilities, prompt,
+  qualityContext,
   headRepository, headBranch, expectedHead, repositoryDir, homeDir, remote,
   opencodeBin: config.opencodeBin, opencodeTimeoutMs: config.opencodeTimeoutMs,
 }, config.workerDispatchSecret);
