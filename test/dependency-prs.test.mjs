@@ -217,3 +217,29 @@ test("warns when recognized dependency PR evidence is truncated", () => {
   assert.equal(evidence.pullRequests.length, 30);
   assert.match(evidence.warnings[0], /truncated at 30 recognized bot pull requests/);
 });
+
+test("never consolidates dependency PRs across base branches", () => {
+  const evidence = collectDependencyPullRequestEvidence(
+    [
+      pull({
+        number: 51,
+        title: "Bump alpha from 1.0.0 to 1.0.1",
+        headRef: "dependabot/npm_and_yarn/alpha-1.0.1",
+        baseRef: "main",
+      }),
+      pull({
+        number: 52,
+        title: "Bump beta from 1.0.0 to 1.0.1",
+        headRef: "dependabot/npm_and_yarn/beta-1.0.1",
+        baseRef: "release/1.x",
+      }),
+    ],
+    5,
+  );
+
+  assert.equal(evidence.lanes.length, 2);
+  assert.deepEqual(evidence.lanes[0].pullNumbers, [51]);
+  assert.deepEqual(evidence.lanes[1].pullNumbers, [52]);
+  assert.match(evidence.lanes[0].id, /base-main/);
+  assert.match(evidence.lanes[1].id, /base-release%2F1\.x/);
+});
