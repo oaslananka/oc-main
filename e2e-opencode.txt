@@ -1,1 +1,2 @@
-OpenCode end-to-end test baseline.\n
+OpenCode end-to-end test baseline.
+opencode-e2e-ok\n
