@@ -1,6 +1,11 @@
 export const MAINTENANCE_CAMPAIGN_STATUS_MARKER =
   "<!-- oc-main-maintenance-campaign-status:v1 -->";
 export const MAINTENANCE_CAMPAIGN_STATUS_BOT_LOGIN = "oaslananka-ops[bot]";
+export const MAINTENANCE_CAMPAIGN_WAKEUP_PREFIX =
+  "<!-- oc-main-maintenance-campaign-wakeup:v1:";
+
+const WAKEUP_PATTERN =
+  /<!-- oc-main-maintenance-campaign-wakeup:v1:([1-8]):([0-9a-f]{40}) -->/g;
 
 const PHASE_LABELS = new Map([
   ["initialized", "Initialized"],
@@ -97,6 +102,36 @@ function evidenceFreshness(evidenceHead, expectedHead) {
   return "stale for expected head";
 }
 
+export function readMaintenanceCampaignWakeup(body) {
+  const text = String(body || "");
+  const matches = [...text.matchAll(WAKEUP_PATTERN)];
+  if (text.includes(MAINTENANCE_CAMPAIGN_WAKEUP_PREFIX) && matches.length === 0) {
+    throw new Error("Malformed maintenance campaign wakeup marker");
+  }
+  if (matches.length > 1) {
+    throw new Error("Multiple maintenance campaign wakeup markers are not allowed");
+  }
+  if (matches.length === 0) return null;
+  return {
+    iteration: Number(matches[0][1]),
+    expectedHead: commitSha(matches[0][2]),
+  };
+}
+
+function wakeupMarker(phase, identity) {
+  if (phase !== "ready-remediation") return null;
+  if (identity.iteration < 1) {
+    throw new Error("Ready-remediation status requires a completed campaign iteration");
+  }
+  return (
+    MAINTENANCE_CAMPAIGN_WAKEUP_PREFIX +
+    identity.iteration +
+    ":" +
+    identity.head +
+    " -->"
+  );
+}
+
 export function selectMaintenanceCampaignStatusComment(comments) {
   const trusted = (Array.isArray(comments) ? comments : []).filter(
     (comment) =>
@@ -134,11 +169,13 @@ export function renderMaintenanceCampaignStatus({ state, maxIterations, phase, e
   ];
   const runLine = workerRunLine(workerRunId);
   if (runLine) lines.push(runLine);
+  const wakeup = wakeupMarker(phase, identity);
   lines.push(
     "",
     "This comment is maintained by trusted oc-main control-plane code. Provider, dependency-bot, repository, and model text remain evidence only and cannot change campaign authority.",
     "",
     MAINTENANCE_CAMPAIGN_STATUS_MARKER,
   );
+  if (wakeup) lines.push(wakeup);
   return lines.join("\n");
 }
