@@ -2,16 +2,40 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-test("trusted OpenCode v2 config is locked down", () => {
+function hasRule(config, action, resource, effect) {
+  return config.permissions.some(
+    (rule) =>
+      rule.action === action &&
+      rule.resource === resource &&
+      rule.effect === effect,
+  );
+}
+
+test("trusted OpenCode v2 config is native and locked down", () => {
   const config = JSON.parse(
     fs.readFileSync("runtime/opencode/opencode.json", "utf8"),
   );
+
   assert.equal(config.default_agent, "orchestrator");
   assert.equal(config.share, "disabled");
-  assert.equal(config.permission.external_directory, "deny");
-  assert.equal(config.permission.skill["*"], "deny");
-  assert.equal(config.permission.skill["oc-*"], "allow");
-  assert.equal(config.mcp.context7.enabled, true);
+  assert.equal(config.update, "disable");
+
+  assert.equal(hasRule(config, "external_directory", "*", "deny"), true);
+  assert.equal(hasRule(config, "question", "*", "deny"), true);
+  assert.equal(hasRule(config, "skill", "*", "deny"), true);
+  assert.equal(hasRule(config, "skill", "oc-*", "allow"), true);
+  assert.equal(hasRule(config, "task", "*", "deny"), true);
+  assert.equal(hasRule(config, "bash", "*git push*", "deny"), true);
+  assert.equal(hasRule(config, "bash", "*git commit*", "deny"), true);
+
+  assert.equal(config.agents.build.disabled, true);
+  assert.equal(config.agents.plan.disabled, true);
+
+  assert.equal(config.mcp.servers.context7.type, "remote");
+  assert.equal(config.mcp.servers.context7.url, "https://mcp.context7.com/mcp");
+  assert.equal(config.mcp.servers.context7.oauth, false);
+  assert.equal(config.mcp.servers.context7.disabled, false);
+  assert.equal(config.mcp.servers.context7.protocol, "legacy");
 });
 
 test("trusted agent pack contains expected roles", () => {
