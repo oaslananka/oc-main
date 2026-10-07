@@ -4,7 +4,7 @@
   "update": "disable",
   "default_agent": "orchestrator",
   "formatter": false,
-  "lsp": true,
+  "lsp": false,
   "tool_output": {
     "max_lines": 1200,
     "max_bytes": 120000
