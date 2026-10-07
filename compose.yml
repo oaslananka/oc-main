@@ -74,7 +74,6 @@ services:
 networks:
   backend:
     driver: bridge
-    internal: true
   frontdoor:
     external: true
     name: oaslananka-frontdoor
