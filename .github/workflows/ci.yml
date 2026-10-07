@@ -44,3 +44,41 @@ jobs:
 
       - name: Build lightweight webhook controller image
         run: docker build --tag oc-main-webhook:ci .
+
+  opencode-v2-runtime:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+
+      - name: Install pinned OpenCode v2
+        run: ./scripts/install-opencode.sh
+
+      - name: Validate trusted OpenCode v2 runtime pack
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/oc-main-v2-home"
+          mkdir -p "$HOME/.config"
+          cp -R runtime/opencode "$HOME/.config/opencode"
+          export OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
+          export OPENCODE_CONFIG_PROJECT_DISABLE=1
+          export OPENCODE_DISABLE_AUTOUPDATE=1
+          export OPENCODE_DB=:memory:
+          opencode --version | grep -F "2.0.24"
+          opencode debug config | node scripts/verify-opencode-v2.mjs config
+
+          agents_verified=0
+          for attempt in 1 2 3 4 5 6; do
+            if opencode debug agents | node scripts/verify-opencode-v2.mjs agents; then
+              agents_verified=1
+              break
+            fi
+            echo "OpenCode agent registry not ready yet (attempt $attempt/6)"
+            sleep 2
+          done
+          test "$agents_verified" -eq 1

@@ -7,6 +7,12 @@ const CURRENT_DEFAULT_MODELS = [
   "opencode/mimo-v2.5-free",
   "opencode/muse-spark-1.3-contributor-free",
   "opencode/big-pickle",
+  "opencode/space-bunny-free",
+  "opencode/longcat-2.5-preview-free",
+  "opencode/ling-3.0-flash-fin-free",
+  "opencode/ling-3.1-flash-free",
+  "opencode/fledge-alpha-free",
+  "opencode/deepseek-v4-flash-free",
 ];
 
 function required(name) {
