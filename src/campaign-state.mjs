@@ -139,6 +139,12 @@ function markerMatches(body) {
   return matches;
 }
 
+export function isMaintenanceCampaignBranchName(value) {
+  return /^oc-maintenance-issue-[1-9]\d*-comment-[1-9]\d*(?:-retry)?$/.test(
+    String(value || ""),
+  );
+}
+
 export function createInitialMaintenanceCampaignState({
   issueNumber,
   commentId,
