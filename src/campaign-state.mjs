@@ -198,8 +198,7 @@ export function createInitialMaintenanceCampaignState({
       ? null
       : String(taskPrompt);
   const autoEligible =
-    prompt !== null &&
-    prompt.trim() &&
+    Boolean(prompt?.trim()) &&
     prompt.length <= MAX_AUTO_TASK_PROMPT &&
     model !== null &&
     model !== undefined &&
