@@ -141,6 +141,18 @@ test("settled current-head blocking evidence is retry eligible", () => {
   assert.equal(result.blockingFindings, 1);
 });
 
+test("blocking findings alone are retry eligible after required checks settle", () => {
+  const result = decide({
+    evidence: evidence({
+      findings: [{ blocking: true }],
+    }),
+  });
+  assert.equal(result.action, "retry-eligible");
+  assert.equal(result.reason, "blocking-regression");
+  assert.equal(result.blockingChecks, 0);
+  assert.equal(result.blockingFindings, 1);
+});
+
 test("clean settled current-head evidence routes to owner review", () => {
   const result = decide();
   assert.equal(result.action, "owner-review");
@@ -155,6 +167,18 @@ test("exhausted iteration budget routes to terminal owner review", () => {
   });
   assert.equal(result.action, "owner-review");
   assert.equal(result.reason, "iteration-limit");
+  assert.equal(result.terminal, true);
+});
+
+test("policy reduction below completed iteration requires owner review", () => {
+  const result = decideMaintenanceCampaignContinuation({
+    state: state({ iteration: 4 }),
+    currentHead: HEAD_A,
+    maxIterations: 3,
+    evidence: evidence(),
+  });
+  assert.equal(result.action, "owner-review");
+  assert.equal(result.reason, "iteration-policy-conflict");
   assert.equal(result.terminal, true);
 });
 
