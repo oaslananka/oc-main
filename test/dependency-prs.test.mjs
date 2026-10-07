@@ -178,7 +178,7 @@ test("uses Dependabot group size hints and keeps over-bound groups isolated", ()
     [
       pull({
         number: 31,
-        title: "Bump the production-dependencies group with 7 updates",
+        title: "Bump the production-dependencies group across 1 directory with 7 updates",
         headRef:
           "dependabot/npm_and_yarn/production-dependencies-7f45f462c2",
       }),
@@ -189,7 +189,7 @@ test("uses Dependabot group size hints and keeps over-bound groups isolated", ()
   assert.equal(evidence.pullRequests[0].updateScope, "group");
   assert.equal(evidence.pullRequests[0].dependencyCountHint, 7);
   assert.equal(evidence.lanes[0].strategy, "keep-separate");
-  assert.ok(evidence.lanes[0].dependencyCountHint > 5);
+  assert.equal(evidence.lanes[0].dependencyCountHint, 7);
 });
 
 test("rejects invalid policy batch bounds", () => {
