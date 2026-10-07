@@ -1,7 +1,7 @@
 import { chooseModel, isSupportedMode } from "./capabilities.mjs";
 
-const INVOCATION = /^\\/(?:oc|opencode)(?=\\s|$)/i;
-const MODEL_TOKEN = /(?:^|\\s)model=([A-Za-z0-9._/-]+)(?=\\s|$)/i;
+const INVOCATION = /^\/(?:oc|opencode)(?=\s|$)/i;
+const MODEL_TOKEN = /(?:^|\s)model=([A-Za-z0-9._/-]+)(?=\s|$)/i;
 
 function defaultPrompt(mode) {
   switch (mode) {
@@ -30,12 +30,12 @@ export function parseCommand(body, { allowedModels, defaultModel }) {
 
   if (modelMatch) {
     remainder = (remainder.slice(0, modelMatch.index) + " " + remainder.slice(modelMatch.index + modelMatch[0].length))
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
   let mode = "auto";
-  const firstToken = remainder.match(/^([A-Za-z-]+)(?=\\s|$)/);
+  const firstToken = remainder.match(/^([A-Za-z-]+)(?=\s|$)/);
   if (firstToken && isSupportedMode(firstToken[1])) {
     mode = firstToken[1].toLowerCase();
     remainder = remainder.slice(firstToken[0].length).trim();
