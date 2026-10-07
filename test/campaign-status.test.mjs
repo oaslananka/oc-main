@@ -145,3 +145,25 @@ test("fails closed when multiple trusted status comments exist", () => {
     /Multiple trusted maintenance campaign status comments/,
   );
 });
+
+test("renders scheduler-owned waiting and owner-review phases", () => {
+  const waiting = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "waiting-checks",
+  });
+  const ready = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "ready-remediation",
+  });
+  const review = renderMaintenanceCampaignStatus({
+    state: state({ in_flight: false }),
+    maxIterations: 4,
+    phase: "owner-review",
+  });
+
+  assert.match(waiting, /Waiting for current-head required checks/);
+  assert.match(ready, /Current-head blocking evidence is retry eligible/);
+  assert.match(review, /Owner review required/);
+});
