@@ -28,11 +28,11 @@ Prepare/finalize stages may use Doppler and short-lived GitHub App installation 
 
 Accepted prefixes: `/oc`, `/opencode`.
 
-Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, `ci`.
+Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`, `release`, `explain`, `refactor`, `ci`, `maintenance`.
 
 Read-only modes: `plan`, `research`, `review`, `security`, `test`, `explain`.
 
-Edit-capable modes: `auto`, `fix`, `apply`, `release`, `refactor`, `ci`.
+Edit-capable modes: `auto`, `fix`, `apply`, `release`, `refactor`, `ci`, `maintenance`.
 
 Free-tier execution uses built-in `plan` for read-only modes and built-in `build` for edit-capable modes. High-risk edit-capable jobs receive a separate read-only planning pass before implementation. Specialized behavior comes from the signed mode prompt, prepared quality context, and trusted `oc-*` skills. Custom agents/subagents are disabled because current OpenCode Console free-tier rejects them.
 
@@ -114,7 +114,19 @@ Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfi
 
 ## Completion and quality context
 
-The trusted prepare stage fetches bounded public Codacy PR findings when available and adds them to the signed-mode prompt as untrusted evidence. Failure to fetch Codacy is soft; the task still runs with repository evidence.
+The trusted prepare stage fetches bounded public Codacy PR findings when available and adds them to ordinary signed-mode prompts as untrusted evidence. Failure to fetch Codacy is soft; the task still runs with repository evidence.
+
+For `maintenance`, prepare builds a structured evidence snapshot before OpenCode starts:
+
+- exact candidate and base commit identities;
+- candidate/base GitHub check runs and their regression/resolution state;
+- live required-check names when repository rules or branch-protection metadata are readable;
+- additional required check names from the base commit's `.github/maintenance-policy.yml`;
+- normalized/deduplicated analyzer findings, currently with detailed public Codacy findings and provider-aware check evidence for Sonar, Codacy, Semgrep, OSV, CodeQL, Socket, Codecov, Trivy, GitGuardian and npm audit naming families.
+
+The maintenance policy parser accepts only the documented bounded schema. It always requires `required_checks.inherit_from_github: true`; malformed or unsupported policy falls back to built-in defaults. The candidate PR cannot weaken its own evidence policy because the policy is read from the base SHA.
+
+No Sonar/Codacy/Codecov API credential is exposed to OpenCode. This tranche does not require new provider credentials; future authenticated collectors must stay in trusted prepare and pass only sanitized findings to the model.
 
 OpenCode CLI output is requested as JSON and reduced to assistant text events. For `fix`, `apply`, `ci`, `release`, and `refactor`, a no-change first pass triggers one bounded retry. A second no-change result is marked incomplete and the Actions run fails rather than reporting a successful no-op.
 
