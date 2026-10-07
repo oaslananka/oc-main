@@ -79,3 +79,21 @@ required_checks:
     DEFAULT_MAINTENANCE_POLICY.analyzers.osv.policy,
   );
 });
+
+test("accepts inline comments and quoted bounded integers", () => {
+  const policy = parseMaintenancePolicy(`
+version: "1" # schema version
+campaign:
+  max_iterations: "3" # bounded retry count
+  max_dependencies_per_batch: 4
+required_checks:
+  inherit_from_github: true # cannot be disabled
+  names:
+    - build # required check
+`);
+
+  assert.equal(policy.version, 1);
+  assert.equal(policy.campaign.max_iterations, 3);
+  assert.equal(policy.campaign.max_dependencies_per_batch, 4);
+  assert.deepEqual(policy.required_checks.names, ["build"]);
+});
