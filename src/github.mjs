@@ -365,7 +365,14 @@ async function updateIssueComment(repository, commentId, body, token) {
 export async function updateMaintenanceCampaignStatus(
   repository,
   pullNumber,
-  { state, maxIterations, phase, evidence = null, workerRunId = null },
+  {
+    state,
+    maxIterations,
+    phase,
+    evidence = null,
+    workerRunId = null,
+    decisionReason = null,
+  },
   token,
 ) {
   const body = renderMaintenanceCampaignStatus({
@@ -374,6 +381,7 @@ export async function updateMaintenanceCampaignStatus(
     phase,
     evidence,
     workerRunId,
+    decisionReason,
   });
   const comments = await listIssueComments(repository, pullNumber, token);
   const existing = selectMaintenanceCampaignStatusComment(comments);
