@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, requiredChecksApiPaths } from "../src/github.mjs";
+import { FINALIZER_COMMENT_TOKEN_PERMISSIONS, apiPath, installationTokenRequestBody, maintenanceCampaignBranchNames, requiredChecksApiPaths } from "../src/github.mjs";
 
 test("apiPath produces a relative GitHub API path", () => {
   assert.equal(
@@ -115,6 +115,22 @@ test("installation token policy permits campaign pull request writes", () => {
         issues: "write",
         pull_requests: "write",
       },
+    },
+  );
+});
+
+test("finalizer comment token uses pull request write", () => {
+  assert.deepEqual(FINALIZER_COMMENT_TOKEN_PERMISSIONS, {
+    pull_requests: "write",
+  });
+  assert.deepEqual(
+    installationTokenRequestBody(
+      "owner/repo",
+      FINALIZER_COMMENT_TOKEN_PERMISSIONS,
+    ),
+    {
+      repositories: ["repo"],
+      permissions: { pull_requests: "write" },
     },
   );
 });
