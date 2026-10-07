@@ -5,7 +5,7 @@ import { verifySignedJob } from "./dispatch.mjs";
 import { createRepositoryInstallationToken, getPullRequest } from "./github.mjs";
 import { clonePullRequestHead } from "./git.mjs";
 import { buildAgentPrompt } from "./opencode.mjs";
-import { actionWorkRoot, writeJob } from "./action-state.mjs";
+import { writeJob } from "./action-state.mjs";
 
 const config = loadConfig();
 const payload = verifySignedJob(JSON.parse(process.env.OC_JOB_PAYLOAD || "{}"), config.workerDispatchSecret);
@@ -13,8 +13,8 @@ const payload = verifySignedJob(JSON.parse(process.env.OC_JOB_PAYLOAD || "{}"), 
 if (!config.allowedUserIds.has(payload.comment_user_id)) throw new Error("Worker payload user is not allowlisted");
 if (!config.allowedModels.has(payload.model)) throw new Error("Worker payload model is not allowlisted");
 
-await fs.rm(actionWorkRoot(), { recursive: true, force: true });
-await fs.mkdir(actionWorkRoot(), { recursive: true });
+await fs.rm(".oc-main-job", { recursive: true, force: true });
+await fs.mkdir(".oc-main-job", { recursive: true });
 
 const baseToken = await createRepositoryInstallationToken(config, payload.repository);
 const pr = await getPullRequest(payload.repository, payload.pull_number, baseToken);
@@ -32,8 +32,8 @@ const { initialHead, remote } = await clonePullRequestHead({
 if (initialHead !== expectedHead) throw new Error("Checked-out PR head does not match GitHub; retry the command");
 
 const homeDir = path.resolve(".oc-main-job/home");
-await fs.mkdir(path.join(homeDir, ".config"), { recursive: true });
-await fs.cp("runtime/opencode", path.join(homeDir, ".config", "opencode"), { recursive: true });
+await fs.mkdir(".oc-main-job/home/.config", { recursive: true });
+await fs.cp("runtime/opencode", ".oc-main-job/home/.config/opencode", { recursive: true });
 
 const prompt = buildAgentPrompt({
   repository: payload.repository,
