@@ -10,17 +10,20 @@ const HEAD_B = "b".repeat(40);
 
 function state(overrides = {}) {
   return {
+    campaign_pr: 7,
     expected_head: HEAD_A,
     iteration: 1,
     terminal: false,
     in_flight: false,
+    last_comment_id: 99,
     ...overrides,
   };
 }
 
-function pr(head = HEAD_A) {
+function pr(head = HEAD_A, campaignState = state()) {
   return {
     state: "open",
+    body: JSON.stringify(campaignState),
     head: { sha: head },
     base: { sha: "c".repeat(40), ref: "main" },
   };
@@ -60,16 +63,28 @@ function evidence({
   };
 }
 
-function observerHarness(evidenceSequence, { heads = null } = {}) {
+function observerHarness(
+  evidenceSequence,
+  { heads = null, campaignStates = null } = {},
+) {
   let fetchIndex = 0;
   let getIndex = 0;
   const statusUpdates = [];
   const sleeps = [];
   const headSequence = heads || Array(evidenceSequence.length * 2).fill(HEAD_A);
+  const stateSequence =
+    campaignStates || Array(headSequence.length).fill(null).map(() => state());
   return {
     statusUpdates,
     sleeps,
-    getPullRequestImpl: async () => pr(headSequence[Math.min(getIndex++, headSequence.length - 1)]),
+    getPullRequestImpl: async () => {
+      const index = Math.min(getIndex++, headSequence.length - 1);
+      return pr(
+        headSequence[index],
+        stateSequence[Math.min(index, stateSequence.length - 1)],
+      );
+    },
+    readCampaignStateImpl: (body) => JSON.parse(body),
     fetchMaintenanceQualityContextImpl: async () => ({
       evidence: evidenceSequence[Math.min(fetchIndex++, evidenceSequence.length - 1)],
     }),
@@ -92,6 +107,7 @@ test("waits on pending checks then stops on a clean settled head", async () => {
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     workerRunId: 123,
     attempts: 2,
     delayMs: 5,
@@ -118,6 +134,7 @@ test("stops immediately when settled blocking evidence is retry eligible", async
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     attempts: 4,
     delayMs: 5,
     ...harness,
@@ -142,6 +159,7 @@ test("bounds pending observation attempts and leaves waiting status", async () =
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     attempts: CAMPAIGN_OBSERVER_MAX_ATTEMPTS,
     delayMs: 1,
     ...harness,
@@ -164,6 +182,7 @@ test("fails closed to owner review if the campaign head changes during observati
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     attempts: 2,
     delayMs: 1,
     ...harness,
@@ -185,6 +204,7 @@ test("never exceeds trusted attempt and delay bounds", async () => {
       state: state(),
       readToken: "read",
       statusToken: "write",
+    campaignStateSecret: "secret",
       attempts: CAMPAIGN_OBSERVER_MAX_ATTEMPTS + 1,
       ...harness,
     }),
@@ -197,6 +217,7 @@ test("never exceeds trusted attempt and delay bounds", async () => {
       state: state(),
       readToken: "read",
       statusToken: "write",
+    campaignStateSecret: "secret",
       attempts: 1,
       delayMs: 20_001,
       ...harness,
@@ -216,6 +237,7 @@ test("treats newly missing required checks as bounded settling grace", async () 
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     attempts: 2,
     delayMs: 5,
     ...harness,
@@ -240,6 +262,7 @@ test("routes persistent missing required checks to owner review at the bound", a
     state: state(),
     readToken: "read",
     statusToken: "write",
+    campaignStateSecret: "secret",
     attempts: 2,
     delayMs: 1,
     ...harness,
@@ -251,4 +274,32 @@ test("routes persistent missing required checks to owner review at the bound", a
     harness.statusUpdates.map((status) => status.phase),
     ["waiting-checks", "owner-review"],
   );
+});
+
+test("stops without overwriting status when a newer campaign iteration starts", async () => {
+  const origin = state();
+  const advanced = state({
+    iteration: 2,
+    in_flight: true,
+    last_comment_id: 99,
+  });
+  const harness = observerHarness([evidence()], {
+    campaignStates: [origin, advanced],
+  });
+  const result = await observeMaintenanceCampaignCurrentHead({
+    repository: "owner/repo",
+    pullNumber: 7,
+    state: origin,
+    readToken: "read",
+    statusToken: "write",
+    campaignStateSecret: "secret",
+    attempts: 2,
+    delayMs: 1,
+    ...harness,
+  });
+
+  assert.equal(result.decision.action, "superseded");
+  assert.equal(result.decision.reason, "campaign-state-advanced");
+  assert.deepEqual(harness.statusUpdates, []);
+  assert.deepEqual(harness.sleeps, []);
 });
