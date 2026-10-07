@@ -36,15 +36,12 @@ Modes: `auto`, `plan`, `research`, `fix`, `apply`, `review`, `security`, `test`,
 
 The worker copies only `runtime/opencode/` into an isolated HOME and runs with:
 
-- `OPENCODE_DISABLE_PROJECT_CONFIG=1` as defense in depth, not as the primary v2.0.24 boundary;
-- `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`;
-- `OPENCODE_DISABLE_CLAUDE_CODE=1`;
+- `OPENCODE_CONFIG_PROJECT_DISABLE=1` using the canonical v2 project-discovery switch;
 - `OPENCODE_DISABLE_AUTOUPDATE=1`;
-- `OPENCODE_DISABLE_LSP_DOWNLOAD=1`;
 - `OPENCODE_DB=:memory:`;
 - `OPENCODE_CONFIG_DIR` pinned to the isolated trusted HOME config directory.
 
-Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Target AGENTS.md content may be read manually as untrusted conventions only.
+Target project OpenCode config/plugins/agents/commands/skills cannot override the trusted runtime. Their control files are quarantined while OpenCode executes, and project discovery is disabled at the v2 server layer. LSP is disabled in the trusted runtime config.
 
 ## GitHub App event handling
 
