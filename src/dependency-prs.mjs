@@ -74,7 +74,7 @@ function scopeFromVersionPair(fromVersion, toVersion) {
 
 function dependabotTitleEvidence(title) {
   const text = String(title || "").trim();
-  const group = text.match(/^Bump the (.+?) group(?:\s+with\s+\d+\s+updates?)?$/i);
+  const group = text.match(/^Bump the (.+?) group\b/i);
   if (group) {
     return {
       packageHint: bounded(group[1], 160),
@@ -189,13 +189,13 @@ function normalizedPull(pull, warnings) {
   };
 }
 
-function laneCapacity(pr, maximum) {
-  return Math.min(Math.max(pr.dependencyCountHint || 1, 1), maximum + 1);
+function laneCapacity(pr) {
+  return Math.max(pr.dependencyCountHint || 1, 1);
 }
 
 function laneRecord(key, pulls, maximum) {
   const dependencyCount = pulls.reduce(
-    (total, pr) => total + laneCapacity(pr, maximum),
+    (total, pr) => total + laneCapacity(pr),
     0,
   );
   const isolated =
@@ -265,12 +265,12 @@ export function collectDependencyPullRequestEvidence(
     const key = laneKey(pr);
     const bucket = buckets.get(key) || [];
     const currentCount = bucket.reduce(
-      (total, item) => total + laneCapacity(item, maximum),
+      (total, item) => total + laneCapacity(item),
       0,
     );
     if (
       bucket.length > 0 &&
-      currentCount + laneCapacity(pr, maximum) > maximum
+      currentCount + laneCapacity(pr) > maximum
     ) {
       lanes.push(
         laneRecord(
