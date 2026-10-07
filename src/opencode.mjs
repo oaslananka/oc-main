@@ -12,6 +12,7 @@ export function buildOpenCodeEnvironment(home) {
     NO_COLOR: "1",
     GIT_OPTIONAL_LOCKS: "0",
     OPENCODE_CLIENT: "oc-main",
+    OPENCODE_CONFIG_DIR: path.join(home, ".config", "opencode"),
     OPENCODE_DB: ":memory:",
     OPENCODE_DISABLE_AUTOUPDATE: "1",
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
