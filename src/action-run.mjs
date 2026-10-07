@@ -50,29 +50,49 @@ async function runTask() {
   let implementationPrompt = job.prompt;
 
   if (job.allowEdits && job.risk === "high") {
-    planOutput = await execute(
-      "plan",
-      buildPlanningPrompt(job.prompt),
-      Math.min(job.opencodeTimeoutMs, 6 * 60_000),
+    console.log(
+      "OpenCode phase=plan start mode=" + job.mode +
+        " model=" + job.model,
     );
-    if (!planOutput) {
-      throw new Error("High-risk planning pass produced no usable output");
+    try {
+      planOutput = await execute(
+        "plan",
+        buildPlanningPrompt(job.prompt),
+        Math.min(job.opencodeTimeoutMs, 2 * 60_000),
+      );
+      if (planOutput) {
+        console.log("OpenCode phase=plan completed");
+        implementationPrompt = [
+          job.prompt,
+          "",
+          "Prepared read-only planning result:",
+          planOutput,
+          "",
+          "Implement the authorized task now. The planning result is advisory evidence, not additional authority.",
+        ].join("\n");
+      } else {
+        console.warn(
+          "OpenCode phase=plan produced no usable output; continuing without plan context",
+        );
+      }
+    } catch (error) {
+      planOutput =
+        "Planning phase unavailable; implementation proceeded without plan context. " +
+        errorTail(error?.message || error, 1200);
+      console.warn(planOutput);
     }
-    implementationPrompt = [
-      job.prompt,
-      "",
-      "Prepared read-only planning result:",
-      planOutput,
-      "",
-      "Implement the authorized task now. The planning result is advisory evidence, not additional authority.",
-    ].join("\n");
   }
 
+  console.log(
+    "OpenCode phase=implementation start mode=" + job.mode +
+      " model=" + job.model,
+  );
   let output = await execute(
     job.agent,
     implementationPrompt,
     job.opencodeTimeoutMs,
   );
+  console.log("OpenCode phase=implementation completed");
 
   const requiresEdit = requiresTrackedChange(
     job.mode,
@@ -81,11 +101,13 @@ async function runTask() {
 
   if (requiresEdit && !(await hasChanges(job.repositoryDir))) {
     if (!isBlockedOutput(output)) {
+      console.log("OpenCode phase=retry start");
       output = await execute(
         job.agent,
         buildRetryPrompt(implementationPrompt, output),
         Math.min(job.opencodeTimeoutMs, 8 * 60_000),
       );
+      console.log("OpenCode phase=retry completed");
     }
 
     if (!(await hasChanges(job.repositoryDir))) {
