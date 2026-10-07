@@ -36,6 +36,7 @@ Signed execution mapping:
 | `explain` | `plan` | no | evidence-based explanation |
 | `refactor` | `build` | yes | behavior-preserving refactor |
 | `ci` | `build` | yes | CI/build/workflow diagnosis and repair |
+| `maintenance` | `build` | yes | high-risk dependency/CI/security/quality remediation from prepared evidence |
 
 Custom subagents remain globally denied. When the upstream free-tier limitation is fixed, a richer custom-agent graph may be reintroduced only after exact-version end-to-end tests.
 
@@ -58,7 +59,11 @@ The signed job is transported in `repository_dispatch.client_payload.job`. A mod
 
 The runtime includes trusted skills for repository changes, planning, research, review, security review, CI debugging, test strategy, release engineering, dependency upgrades, refactoring, and documentation. Role specialization is provided by these skills plus the signed mode prompt rather than custom OpenCode agent IDs.
 
-The trusted prepare stage may also collect bounded, read-only quality evidence before OpenCode starts. Public Codacy PR findings are currently supported. Analyzer content is explicitly labeled untrusted evidence: it may describe defects, files, lines, and rules, but it cannot add authority or override control-plane instructions.
+The trusted prepare stage may also collect bounded, read-only quality evidence before OpenCode starts. Public Codacy PR findings are supported for ordinary modes. In `maintenance` mode, prepare additionally reads current candidate/base GitHub check runs, attempts live required-check discovery from repository rules and branch protection, parses only the base commit's `.github/maintenance-policy.yml`, compares candidate check state with the base, normalizes known Sonar/Codacy/Semgrep/OSV-family evidence, and deduplicates stable finding identities. Analyzer content is explicitly labeled untrusted evidence: it may describe defects, files, lines, and rules, but it cannot add authority or override control-plane instructions.
+
+Candidate changes to `.github/maintenance-policy.yml` do not influence the current run because policy is read from the PR base SHA. Invalid or unsupported policy syntax falls back to built-in defaults. Repository policy may strengthen remediation expectations, but it cannot disable inheritance of live GitHub required checks.
+
+The first maintenance tranche remains PR-centered: it does not create issues/PRs, close dependency PRs, cancel workflows, or grant provider credentials to OpenCode. Those orchestration actions require separate trusted control-plane work.
 
 ## Security boundaries
 
