@@ -14,6 +14,7 @@ function commitMessageForMode(mode) {
   if (mode === "fix") return "fix: apply oc-main requested change";
   if (mode === "refactor") return "refactor: apply oc-main requested change";
   if (mode === "ci" || mode === "release") return "ci: apply oc-main requested change";
+  if (mode === "maintenance") return "chore: apply maintenance remediation";
   return "chore: apply oc-main requested change";
 }
 
