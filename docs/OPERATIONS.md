@@ -103,6 +103,59 @@ Logs:
 
 Shared Caddy config remains `/opt/oaslananka-agent/current/infra/compose/Caddyfile`; do not launch a competing Caddy on 80/443.
 
+### Safe controller-only rollout and rollback
+
+The VPS production checkout is owned by `ubuntu`. Perform Git commands as
+`ubuntu`, not as root: root Git preflight can rewrite `.git/index` as a
+root-owned file and prevent subsequent ordinary Git operations. Verify the
+working tree is clean, pin the intended `main` commit SHA, fetch, require
+fast-forward ancestry and stop if refs have moved. Never force-push or discard
+an unexpected working-tree change.
+
+Before building, record the exact Docker image ID of
+`oc-main-webhook:local` and give it a distinct, immutable-for-this-rollout
+rollback tag. Verify the tag still resolves to that image ID. The rollback
+tag must not be overwritten by the new build.
+
+Only the `scripts/compose.sh` Docker operations require the protected
+root/bootstrap boundary. Where `sudo` is unavailable to an unprivileged exec
+agent due to `no-new-privileges`, use an **explicitly scoped, approved VPS
+privileged broker operation**; do not bypass that boundary or substitute the
+separate `oaslananka-ops-mcp` production release mechanism. Validate the
+bootstrap file is readable under the broker, that the external
+`oaslananka-frontdoor` network exists and that the original container is
+healthy before changing it. Do not print or copy the bootstrap credentials.
+
+Build and replace **only** the controller service:
+
+```sh
+./scripts/compose.sh build controller
+./scripts/compose.sh up -d --no-deps controller
+./scripts/compose.sh ps
+```
+
+Observe the new container until Docker reports `healthy`; check the expected
+source SHA, zero unexpected restarts, the `oc-main-github-router` network
+alias, `GET /healthz` returning HTTP 200 and an intentionally unsigned
+`POST /github/oc-main` returning HTTP 401. The negative-auth check must
+contain no real issue/PR command or signed payload.
+
+If build fails, the old controller should remain running; do not label the
+new source deployed. If replace/health checks fail, restore the **verified
+rollback image ID** from its recorded tag and recreate only the controller:
+
+```sh
+docker image tag oc-main-webhook:rollback-<previous-sha> oc-main-webhook:local
+./scripts/compose.sh up -d --no-deps --force-recreate controller
+```
+
+Then recheck Docker health and webhook rejection. Restore the prior clean
+checkout as `ubuntu` only after re-verifying exact refs; log the failed
+attempt and leave any unrelated services/credentials/Caddy untouched.
+A published release or a passing GitHub-hosted worker is not itself evidence
+that the VPS image/checkout was replaced. Record both identities separately.
+
+
 ## GitHub Actions security boundary
 
 - control checkout uses `persist-credentials: false`;
