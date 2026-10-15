@@ -62,12 +62,9 @@ async function execute(agent, prompt, timeoutMs) {
   }
   const { result, classification } = verified;
   if (verified.retried && classification.accepted && isBlockedOutput(classification.output)) {
-    throw new Error("OpenCode recovery verification reported a blocker: " + errorTail(classification.output, 1_500));
+    throw new Error("OpenCode recovery verification reported a blocker");
   }
   if (!classification.accepted) {
-    const raw = String(result.stderr || "").trim() ||
-      String(classification.output || "").trim() ||
-      "no process output";
     console.error(
       "OpenCode nonzero result rejected code=" + result.code +
         " reason=" + classification.reason +
@@ -75,8 +72,8 @@ async function execute(agent, prompt, timeoutMs) {
         " stderrBytes=" + Buffer.byteLength(String(result.stderr || "")),
     );
     throw new Error(
-      job.opencodeBin + " failed with exit code " + result.code +
-        " (" + classification.reason + "): " + errorTail(raw, 5_000),
+      "OpenCode returned exit code " + result.code +
+        " (" + classification.reason + ")",
     );
   }
   if (classification.recovered) {
