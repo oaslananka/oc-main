@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildOpenCodeEnvironment,
+  buildInterruptedRunPrompt,
   buildRetryPrompt,
   classifyOpenCodeResult,
   cleanOpenCodeOutput,
+  retryUnexplainedMaintenanceExitOnce,
 } from "../src/opencode.mjs";
 
 test("OpenCode worker environment uses native v2 isolation controls", () => {
@@ -189,3 +191,83 @@ test("rejects non-one nonzero exit codes", () => {
   assert.equal(result.reason, "unexpected-exit-code");
 });
 
+test("requires a clean independent recovery run for unexplained maintenance exit", async () => {
+  const first = {
+    code: 1,
+    stderr: "",
+    stdout: jsonl(
+      { type: "step_start", part: { type: "step-start", messageID: "m" } },
+      { type: "text", part: { type: "text", messageID: "m", text: "claimed done", time: { start: 1, end: 2 } } },
+    ),
+  };
+  let retries = 0;
+  const result = await retryUnexplainedMaintenanceExitOnce({
+    first,
+    classification: classifyOpenCodeResult(first),
+    mode: "maintenance",
+    agent: "build",
+    allowEdits: true,
+    hasTrackedChanges: async () => true,
+    runRecovery: async () => {
+      retries += 1;
+      return { code: 0, stderr: "", stdout: jsonl({ type: "text", part: { type: "text", text: "verified", time: { start: 3, end: 4 } } }) };
+    },
+  });
+  assert.equal(retries, 1);
+  assert.equal(result.retried, true);
+  assert.equal(result.result.code, 0);
+  assert.equal(result.classification.accepted, true);
+  assert.equal(result.classification.output, "verified");
+});
+
+test("never retries unexplained exit without tracked edits or outside maintenance build", async () => {
+  const first = { code: 1, stderr: "", stdout: jsonl({ type: "text", part: { type: "text", text: "done" } }) };
+  const classification = classifyOpenCodeResult(first);
+  for (const overrides of [
+    { mode: "fix" },
+    { agent: "plan" },
+    { allowEdits: false },
+    { hasTrackedChanges: async () => false },
+    { first: { ...first, stderr: "fatal" } },
+  ]) {
+    let count = 0;
+    const result = await retryUnexplainedMaintenanceExitOnce({
+      first,
+      classification,
+      mode: "maintenance",
+      agent: "build",
+      allowEdits: true,
+      hasTrackedChanges: async () => true,
+      runRecovery: async () => { count++; throw new Error("should not retry"); },
+      ...overrides,
+    });
+    assert.equal(result.retried, false);
+    assert.equal(result.classification.accepted, false);
+    assert.equal(count, 0);
+  }
+});
+
+test("a second failed run stays failed even when files were modified", async () => {
+  const first = { code: 1, stderr: "", stdout: jsonl({ type: "text", part: { type: "text", text: "claimed done" } }) };
+  const result = await retryUnexplainedMaintenanceExitOnce({
+    first,
+    classification: classifyOpenCodeResult(first),
+    mode: "maintenance",
+    agent: "build",
+    allowEdits: true,
+    hasTrackedChanges: async () => true,
+    runRecovery: async () => ({ code: 1, stderr: "", stdout: first.stdout }),
+  });
+  assert.equal(result.retried, true);
+  assert.equal(result.classification.accepted, false);
+  assert.equal(result.classification.reason, "unexplained-exit-one");
+});
+
+test("recovery prompt requires review and does not grant transport authority", () => {
+  const prompt = buildInterruptedRunPrompt("task", "summary");
+  assert.match(prompt, /Inspect the current tracked diff/);
+  assert.match(prompt, /Do not assume/);
+  assert.match(prompt, /Never commit, push/);
+  assert.match(prompt, /BLOCKED:/);
+  assert.match(prompt, /summary/);
+});
