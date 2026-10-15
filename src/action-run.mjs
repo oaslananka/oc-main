@@ -2,9 +2,12 @@ import path from "node:path";
 import { readJobUnsafe, writeResult } from "./action-state.mjs";
 import { hasChanges } from "./git.mjs";
 import {
+  buildInterruptedRunPrompt,
   buildPlanningPrompt,
   buildRetryPrompt,
   classifyOpenCodeResult,
+  cleanOpenCodeOutput,
+  retryUnexplainedMaintenanceExitOnce,
   runOpenCode,
 } from "./opencode.mjs";
 import {
@@ -28,7 +31,7 @@ function errorTail(value, limit = 8000) {
 }
 
 async function execute(agent, prompt, timeoutMs) {
-  const result = await runOpenCode({
+  const first = await runOpenCode({
     repositoryDir: job.repositoryDir,
     homeDir: job.homeDir,
     opencodeBin: job.opencodeBin,
@@ -37,10 +40,33 @@ async function execute(agent, prompt, timeoutMs) {
     prompt,
     timeoutMs,
   });
-  const classification = classifyOpenCodeResult(result);
+  const verified = await retryUnexplainedMaintenanceExitOnce({
+    first,
+    classification: classifyOpenCodeResult(first),
+    mode: job.mode,
+    agent,
+    allowEdits: job.allowEdits,
+    hasTrackedChanges: () => hasChanges(job.repositoryDir),
+    runRecovery: () => runOpenCode({
+      repositoryDir: job.repositoryDir,
+      homeDir: job.homeDir,
+      opencodeBin: job.opencodeBin,
+      model: job.model,
+      agent,
+      prompt: buildInterruptedRunPrompt(prompt, cleanOpenCodeOutput(first.stdout)),
+      timeoutMs: Math.min(job.opencodeTimeoutMs, 2 * 60_000),
+    }),
+  });
+  if (verified.retried) {
+    console.warn("OpenCode unexplained exit 1: bounded independent verification attempted");
+  }
+  const { result, classification } = verified;
+  if (verified.retried && classification.accepted && isBlockedOutput(classification.output)) {
+    throw new Error("OpenCode recovery verification reported a blocker: " + errorTail(classification.output, 1_500));
+  }
   if (!classification.accepted) {
     const raw = String(result.stderr || "").trim() ||
-      String(result.stdout || "").trim() ||
+      String(classification.output || "").trim() ||
       "no process output";
     console.error(
       "OpenCode nonzero result rejected code=" + result.code +

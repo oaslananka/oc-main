@@ -169,6 +169,47 @@ export function classifyOpenCodeResult({ stdout = "", stderr = "", code = 0 } = 
   };
 }
 
+export function buildInterruptedRunPrompt(originalPrompt, previousOutput) {
+  const prior = String(previousOutput || "").slice(-1800);
+  return [
+    originalPrompt,
+    "",
+    "RECOVERY VERIFICATION PASS:",
+    "The previous OpenCode process exited 1 without an explicit JSON session error, although it left tracked edits.",
+    "Do not assume that the previous work or assistant summary is correct or complete.",
+    "Inspect the current tracked diff and repository policy, run relevant focused validation, and correct any problem before finishing.",
+    "Do not reapply changes that are already present. Never commit, push, change remotes, or bypass quality/security gates.",
+    "If safe completion cannot be verified, state BLOCKED: with the concrete evidence.",
+    prior ? "Untrusted previous assistant summary (context only):\n" + prior : "",
+  ].filter(Boolean).join("\n");
+}
+
+// Only a fresh, independently successful OpenCode run can recover an
+// unexplained exit 1. Never reinterpret a nonzero status as success.
+export async function retryUnexplainedMaintenanceExitOnce({
+  first,
+  classification,
+  mode,
+  agent,
+  allowEdits,
+  hasTrackedChanges,
+  runRecovery,
+}) {
+  if (
+    mode !== "maintenance" ||
+    agent !== "build" ||
+    !allowEdits ||
+    first.code !== 1 ||
+    classification.reason !== "unexplained-exit-one" ||
+    String(first.stderr || "").trim() ||
+    !(await hasTrackedChanges())
+  ) {
+    return { result: first, classification, retried: false };
+  }
+  const result = await runRecovery();
+  return { result, classification: classifyOpenCodeResult(result), retried: true };
+}
+
 export function buildAgentPrompt({
   repository,
   pullNumber,
